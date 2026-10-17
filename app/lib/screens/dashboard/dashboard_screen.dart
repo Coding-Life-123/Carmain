@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/vehiculo.dart';
 import '../../providers/providers.dart';
+import '../crear_vehiculo/crear_vehiculo_screen.dart';
+import '../detalle_vehiculo/detalle_vehiculo_screen.dart';
 
 /// Pantalla principal de CarMain.
 ///
@@ -25,9 +27,7 @@ class DashboardScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Configuración',
-            onPressed: () {
-              // TODO: navegar a ajustes.
-            },
+            onPressed: () => _mostrarAjustes(context),
           ),
         ],
       ),
@@ -48,7 +48,7 @@ class DashboardScreen extends ConsumerWidget {
             child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
               itemCount: vehiculos.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final vehiculo = vehiculos[index];
                 return _VehiculoCard(
@@ -71,13 +71,74 @@ class DashboardScreen extends ConsumerWidget {
   }
 
   void _navegarCrearVehiculo(BuildContext context) {
-    // TODO: reemplazar por la pantalla de creación de vehículo.
-    Navigator.pushNamed(context, '/crear-vehiculo');
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CrearVehiculoScreen()),
+    );
   }
 
   void _navegarDetalle(BuildContext context, String id) {
-    // TODO: reemplazar por la pantalla de detalle de vehículo.
-    Navigator.pushNamed(context, '/detalle/$id');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DetalleVehiculoScreen(vehiculoId: id),
+      ),
+    );
+  }
+
+  void _mostrarAjustes(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.directions_car, color: Color(0xFFD32F2F)),
+                    const SizedBox(width: 10),
+                    Text(
+                      'CarMain v1.0.0',
+                      style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.dns_outlined),
+                  title: Text('Servidor Backend'),
+                  subtitle: Text('http://localhost:8080 (Go)'),
+                ),
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.storage_outlined),
+                  title: Text('Base de datos'),
+                  subtitle: Text('Local-first (Drift / SQLite)'),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cerrar'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   String _mensajeError(Object error) {

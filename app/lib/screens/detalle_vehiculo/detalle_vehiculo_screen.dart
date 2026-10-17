@@ -6,6 +6,7 @@ import '../../models/plan_mantenimiento.dart';
 import '../../models/registro_mantenimiento.dart';
 import '../../models/vehiculo.dart';
 import '../../providers/providers.dart';
+import '../registrar_mantenimiento/registrar_mantenimiento_screen.dart';
 
 /// Pantalla de detalle de un vehículo.
 ///
@@ -44,7 +45,7 @@ class DetalleVehiculoScreen extends ConsumerWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => const _PlaceholderRegistro(),
+              builder: (_) => RegistrarMantenimientoScreen(vehiculoId: vehiculoId),
             ),
           );
         },
@@ -472,20 +473,6 @@ class _EstadoError extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _PlaceholderRegistro extends StatelessWidget {
-  const _PlaceholderRegistro();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Registrar mantenimiento')),
-      body: const Center(
-        child: Text('Pantalla de registro de mantenimiento (próximamente)'),
       ),
     );
   }

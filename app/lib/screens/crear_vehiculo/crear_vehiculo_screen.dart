@@ -135,7 +135,6 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Crear Vehículo')),
