@@ -20,6 +20,9 @@ class DashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final vehiculosAsync = ref.watch(vehiculosProvider);
+    // Probe de conexión con el backend: arranca al abrir la app y al
+    // tocar el icono se re-prueba.
+    final conexionAsync = ref.watch(conexionServidorProvider);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -27,6 +30,26 @@ class DashboardScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('CarMain'),
         actions: [
+          IconButton(
+            icon: conexionAsync.isLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    conexionAsync.value == true
+                        ? Icons.cloud_done_outlined
+                        : Icons.cloud_off_outlined,
+                    color: conexionAsync.value == true
+                        ? Colors.green
+                        : colorScheme.error,
+                  ),
+            tooltip: conexionAsync.value == true
+                ? 'Servidor conectado'
+                : 'Sin conexión con el servidor',
+            onPressed: () => ref.invalidate(conexionServidorProvider),
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Configuración',

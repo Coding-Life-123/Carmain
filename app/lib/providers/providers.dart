@@ -127,6 +127,26 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   );
 });
 
+/// Estado de conexión con el backend — el dashboard lo muestra al abrir
+/// la app (probe contra /api/health). true = conectado; false = sin
+/// conexión, que NO es un error: la app es local-first y sigue 100%
+/// funcional, esto es solo una señal para el usuario.
+///
+/// `retry: null` — un probe de estado no debe reintentar con backoff.
+final conexionServidorProvider =
+    FutureProvider.autoDispose<bool>((ref) async {
+  try {
+    await ApiClient.probarConexion(
+      baseUrl: ref.watch(servidorUrlProvider),
+      apiKey: ref.watch(servidorApiKeyProvider),
+      timeout: const Duration(seconds: 4),
+    );
+    return true;
+  } catch (_) {
+    return false;
+  }
+}, retry: (_, _) => null);
+
 /// Busca las motorizaciones de fábrica de una configuración de vehículo.
 ///
 /// La clave es "marca|modelo|anio|trim" — la pantalla de crear vehículo la

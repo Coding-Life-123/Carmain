@@ -11,7 +11,12 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
 
     await tester.pumpWidget(ProviderScope(
-      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        // El indicador de conexión probea /api/health contra la URL
+        // configurada — en el test no debe tocar la red.
+        conexionServidorProvider.overrideWith((ref) => Future.value(true)),
+      ],
       child: const CarMainApp(),
     ));
 
