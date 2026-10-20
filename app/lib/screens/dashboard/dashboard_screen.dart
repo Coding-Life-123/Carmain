@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/vehiculo.dart';
 import '../../providers/providers.dart';
+import '../../widgets/eliminar_vehiculo_dialog.dart';
 import '../crear_vehiculo/crear_vehiculo_screen.dart';
 import '../detalle_vehiculo/detalle_vehiculo_screen.dart';
 
@@ -54,6 +55,19 @@ class DashboardScreen extends ConsumerWidget {
                 return _VehiculoCard(
                   vehiculo: vehiculo,
                   onTap: () => _navegarDetalle(context, vehiculo.id),
+                  onEditar: () => _navegarEditar(context, vehiculo),
+                  onEliminar: () async {
+                    final eliminado = await confirmarYEliminarVehiculo(
+                        context, ref, vehiculo);
+                    if (eliminado && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content:
+                              Text('${vehiculo.nombreCompleto} eliminado'),
+                        ),
+                      );
+                    }
+                  },
                 );
               },
             ),
@@ -77,6 +91,15 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
+  void _navegarEditar(BuildContext context, Vehiculo vehiculo) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CrearVehiculoScreen(vehiculoExistente: vehiculo),
+      ),
+    );
+  }
+
   void _navegarDetalle(BuildContext context, String id) {
     Navigator.push(
       context,
@@ -93,50 +116,7 @@ class DashboardScreen extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.directions_car, color: Color(0xFFD32F2F)),
-                    const SizedBox(width: 10),
-                    Text(
-                      'CarMain v1.0.0',
-                      style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                const ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.dns_outlined),
-                  title: Text('Servidor Backend'),
-                  subtitle: Text('http://localhost:8080 (Go)'),
-                ),
-                const ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.storage_outlined),
-                  title: Text('Base de datos'),
-                  subtitle: Text('Local-first (Drift / SQLite)'),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cerrar'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
+        return const _AjustesSheet();
       },
     );
   }
@@ -146,12 +126,151 @@ class DashboardScreen extends ConsumerWidget {
   }
 }
 
+/// Panel de ajustes: muestra la URL del backend configurada y permite
+/// editarla (se persiste con shared_preferences).
+class _AjustesSheet extends ConsumerWidget {
+  const _AjustesSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final url = ref.watch(servidorUrlProvider);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.directions_car, color: Color(0xFFD32F2F)),
+                const SizedBox(width: 10),
+                Text(
+                  'CarMain v1.0.0',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.dns_outlined),
+              title: const Text('Servidor Backend'),
+              subtitle: Text(url),
+              trailing: const Icon(Icons.edit_outlined, size: 20),
+              onTap: () => _editarUrl(context, ref),
+            ),
+            const ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.storage_outlined),
+              title: Text('Base de datos'),
+              subtitle: Text('Local-first (Drift / SQLite)'),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _editarUrl(BuildContext context, WidgetRef ref) {
+    final controller = TextEditingController(text: ref.read(servidorUrlProvider));
+    String? error;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            return AlertDialog(
+              title: const Text('Servidor Backend'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    keyboardType: TextInputType.url,
+                    decoration: InputDecoration(
+                      hintText: 'http://192.168.1.50:8080',
+                      border: const OutlineInputBorder(),
+                      errorText: error,
+                    ),
+                    onChanged: (_) {
+                      if (error != null) setState(() => error = null);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Emulador Android: http://10.0.2.2:8080\n'
+                    'Dispositivo físico: IP LAN de este PC',
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final url = controller.text.trim();
+                    final err = _validarUrl(url);
+                    if (err != null) {
+                      setState(() => error = err);
+                      return;
+                    }
+                    await ref.read(servidorUrlProvider.notifier).setUrl(url);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                  child: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).then((_) => controller.dispose());
+  }
+
+  /// Valida que la URL tenga esquema http/https y host. Retorna el mensaje
+  /// de error o null si es válida.
+  String? _validarUrl(String valor) {
+    final uri = Uri.tryParse(valor);
+    if (uri == null || uri.host.isEmpty) return 'URL inválida';
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      return 'Debe iniciar con http:// o https://';
+    }
+    return null;
+  }
+}
+
 /// Tarjeta individual de un vehículo.
 class _VehiculoCard extends StatelessWidget {
-  const _VehiculoCard({required this.vehiculo, required this.onTap});
+  const _VehiculoCard({
+    required this.vehiculo,
+    required this.onTap,
+    required this.onEditar,
+    required this.onEliminar,
+  });
 
   final Vehiculo vehiculo;
   final VoidCallback onTap;
+  final VoidCallback onEditar;
+  final VoidCallback onEliminar;
 
   @override
   Widget build(BuildContext context) {
@@ -216,6 +335,23 @@ class _VehiculoCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 _SwapChip(),
               ],
+              // Menú de acciones: editar / eliminar (CRUD).
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                tooltip: 'Acciones',
+                onSelected: (accion) {
+                  switch (accion) {
+                    case 'editar':
+                      onEditar();
+                    case 'eliminar':
+                      onEliminar();
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'editar', child: Text('Editar')),
+                  PopupMenuItem(value: 'eliminar', child: Text('Eliminar')),
+                ],
+              ),
             ],
           ),
         ),

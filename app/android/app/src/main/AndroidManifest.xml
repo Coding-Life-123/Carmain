@@ -1,7 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- La app se comunica con el backend Go (REST con dio + WebSocket relay),
+         así que el permiso INTERNET debe declararse aquí para que el build
+         release también lo tenga (debug/profile lo heredan de sus manifests). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="car_main"
         android:name="${applicationName}"
+        android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

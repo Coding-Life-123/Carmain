@@ -6,6 +6,8 @@ import '../../models/plan_mantenimiento.dart';
 import '../../models/registro_mantenimiento.dart';
 import '../../models/vehiculo.dart';
 import '../../providers/providers.dart';
+import '../../widgets/eliminar_vehiculo_dialog.dart';
+import '../crear_vehiculo/crear_vehiculo_screen.dart';
 import '../registrar_mantenimiento/registrar_mantenimiento_screen.dart';
 
 /// Pantalla de detalle de un vehículo.
@@ -22,11 +24,38 @@ class DetalleVehiculoScreen extends ConsumerWidget {
     final vehiculoAsync = ref.watch(vehiculoProvider(vehiculoId));
     final planAsync = ref.watch(planProvider(vehiculoId));
     final registrosAsync = ref.watch(registrosProvider(vehiculoId));
+    // Para las acciones del app bar (editar/eliminar) — null mientras carga.
+    final vehiculo = vehiculoAsync.value;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Detalle del vehículo'),
         actions: [
+          // CRUD: editar y eliminar, habilitados cuando el vehículo cargó.
+          if (vehiculo != null) ...[
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Editar vehículo',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      CrearVehiculoScreen(vehiculoExistente: vehiculo),
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Eliminar vehículo',
+              onPressed: () async {
+                final eliminado =
+                    await confirmarYEliminarVehiculo(context, ref, vehiculo);
+                // Sin vehículo no hay nada que mostrar aquí — volver al
+                // dashboard (la lista ya se invalidó sola).
+                if (eliminado && context.mounted) Navigator.of(context).pop();
+              },
+            ),
+          ],
           IconButton(
             icon: const Icon(Icons.swap_horiz),
             tooltip: 'Editar componentes (swap)',
@@ -150,6 +179,14 @@ class _SeccionInfoVehiculo extends StatelessWidget {
                   icon: Icons.local_gas_station,
                   label: '${motor.codigo} · ${motor.tipoCombustible.label}',
                 ),
+                if (motor.potenciaHp != null || motor.torqueNm != null)
+                  _ChipInfo(
+                    icon: Icons.bolt,
+                    label: [
+                      if (motor.potenciaHp != null) '${motor.potenciaHp} HP',
+                      if (motor.torqueNm != null) '${motor.torqueNm} Nm',
+                    ].join(' · '),
+                  ),
                 _ChipInfo(
                   icon: Icons.settings,
                   label: '${trans.codigo} · ${trans.tipo.label}',

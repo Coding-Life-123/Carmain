@@ -3,8 +3,8 @@ package biblioteca
 import (
 	"log"
 	"net/http"
-	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/carmain/servidor-go/shared"
@@ -26,8 +26,8 @@ func NewHandler() *Handler {
 
 // crearSesionRequest es el cuerpo de POST /api/sesion.
 type crearSesionRequest struct {
-	VehiculoID        string `json:"vehiculoId" binding:"required"`
-	DuracionSegundos  int    `json:"duracionSegundos"`
+	VehiculoID       string `json:"vehiculoId" binding:"required"`
+	DuracionSegundos int    `json:"duracionSegundos"`
 }
 
 // PlanHandler maneja GET /api/plan.
@@ -41,7 +41,7 @@ func (h *Handler) PlanHandler(c *gin.Context) {
 	marca := c.Query("marca")
 	modelo := c.Query("modelo")
 	anioStr := c.Query("anio")
-	drivetrain := c.Query("drivetrain")
+	drivetrain := normalizarDrivetrain(c.Query("drivetrain"))
 	motorCodigo := c.Query("motorCodigo")
 	transCodigo := c.Query("transCodigo")
 	trim := c.Query("trim")
@@ -83,20 +83,27 @@ func (h *Handler) PlanHandler(c *gin.Context) {
 		return
 	}
 
-	// 2. Investigar con IA (o fallback si no hay API key)
-	plan, err := InvestigarPlan(config)
+	// 2. Investigar con IA (o fallback si no hay API key / falla Gemini)
+	plan, esFallback, err := InvestigarPlan(config)
 	if err != nil {
 		log.Printf("[handler] error investigando plan: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error generando plan de mantenimiento"})
 		return
 	}
 
-	// 3. Guardar en cache
-	h.Cache.Set(config, plan)
-	log.Printf("[handler] plan generado y cacheado para %s %s %d (%d ítems)", marca, modelo, anio, len(plan.Items))
+	// 3. Guardar en cache SOLO planes investigados: un fallback producto de
+	// un fallo transitorio de Gemini (429, timeout, red) no debe quedar
+	// cacheado hasta reiniciar el proceso — la próxima solicitud reintenta.
+	if !esFallback {
+		h.Cache.Set(config, plan)
+		log.Printf("[handler] plan generado y cacheado para %s %s %d (%d ítems)", marca, modelo, anio, len(plan.Items))
+	} else {
+		log.Printf("[handler] plan de fallback (no cacheado) para %s %s %d", marca, modelo, anio)
+	}
 
-	// 4. Determinar si requiere review (plan de fallback lo requiere)
-	requiereReview := os.Getenv("ANTHROPIC_API_KEY") == ""
+	// 4. El plan de fallback requiere revisión — se calcula por procedencia
+	// real, no por la presencia de la API key (que puede fallar a mitad).
+	requiereReview := esFallback
 
 	c.JSON(http.StatusOK, shared.RespuestaPlan{
 		Plan:           plan,
@@ -104,6 +111,25 @@ func (h *Handler) PlanHandler(c *gin.Context) {
 		TieneSwaps:     false,
 		RequiereReview: requiereReview,
 	})
+}
+
+// normalizarDrivetrain lleva el drivetrain al vocabulario canónico del
+// contrato (FWD|RWD|AWD|4WD, ver shared.ConfigVehiculo). La app nueva envía
+// las etiquetas, pero versiones instaladas pueden enviar el nombre del enum
+// Dart en minúsculas ('fwd', 'awd', 'fourWd') — sin esto, el fallback omite
+// diferencial y transfer case en AWD/4WD y el prompt de IA se degrada.
+func normalizarDrivetrain(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "fwd":
+		return "FWD"
+	case "rwd":
+		return "RWD"
+	case "awd":
+		return "AWD"
+	case "4wd", "fourwd":
+		return "4WD"
+	}
+	return s
 }
 
 // CrearSesionHandler maneja POST /api/sesion.

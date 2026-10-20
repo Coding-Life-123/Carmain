@@ -1,5 +1,4 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:json_annotation/json_annotation.dart';
 
 import 'enums.dart';
 
@@ -47,10 +46,6 @@ enum EstadoItem { vencido, proximo, ok }
 
 /// Extensión con cálculos de próximo mantenimiento.
 extension ItemMantenimientoX on ItemMantenimiento {
-  /// Kilómetros desde la última vez que se hizo este mantenimiento.
-  /// Si nunca se hizo, retorna null.
-  int? get kmDesdeUltimaVez => ultimaVezKm == null ? null : null;
-
   /// Calcula cuántos km faltan para el próximo mantenimiento,
   /// dado el kilometraje actual del vehículo.
   int kmRestantes(int kilometrajeActual, TipoUso tipoUso) {

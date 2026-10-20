@@ -1,5 +1,4 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:json_annotation/json_annotation.dart';
 
 import 'enums.dart';
 
@@ -37,6 +36,8 @@ abstract class Motor with _$Motor {
     double? cilindrada,
     int? cilindros,
     String? aspiracion, // ej. "NA", "Turbo", "Twin-Turbo", "Supercharger"
+    int? potenciaHp, // caballos de fuerza
+    int? torqueNm, // newton-metro
   }) = _Motor;
 
   factory Motor.fromJson(Map<String, dynamic> json) => _$MotorFromJson(json);

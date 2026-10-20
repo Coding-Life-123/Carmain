@@ -37,8 +37,17 @@ class VehiculoRepository {
     return vehiculo.id;
   }
 
+  /// Elimina un vehículo y todo lo asociado (plan, registros, sesiones de
+  /// compartido) en una transacción. El esquema no declara FKs con cascade,
+  /// así que sin esto las filas dependientes quedarían huérfanas.
   Future<void> deleteVehiculo(String id) async {
-    await _db.vehiculos.deleteWhere((t) => t.id.equals(id));
+    await _db.transaction(() async {
+      await _db.registrosMantenimiento
+          .deleteWhere((t) => t.vehiculoId.equals(id));
+      await _db.planesMantenimiento.deleteWhere((t) => t.vehiculoId.equals(id));
+      await _db.sesionesMecanico.deleteWhere((t) => t.vehiculoId.equals(id));
+      await _db.vehiculos.deleteWhere((t) => t.id.equals(id));
+    });
   }
 
   Future<void> updateKilometraje(String id, int km) async {
@@ -61,6 +70,21 @@ class VehiculoRepository {
 
   Future<void> savePlan(PlanMantenimiento plan) async {
     await _db.planesMantenimiento.insertOnConflictUpdate(_planToRow(plan));
+  }
+
+  /// Reemplaza el plan de un vehículo de forma atómica: borra el plan
+  /// anterior (si existe) e inserta el nuevo en la misma transacción.
+  ///
+  /// La tabla no declara unique sobre vehiculoId — un savePlan con un id
+  /// nuevo (plan regenerado al editar la configuración técnica) dejaría
+  /// dos planes para el mismo vehículo y getPlan (getSingleOrNull)
+  /// lanzaría StateError para siempre.
+  Future<void> replacePlan(PlanMantenimiento plan) async {
+    await _db.transaction(() async {
+      await _db.planesMantenimiento
+          .deleteWhere((t) => t.vehiculoId.equals(plan.vehiculoId));
+      await _db.planesMantenimiento.insertOnConflictUpdate(_planToRow(plan));
+    });
   }
 
   // ─────────────────── Registros de mantenimiento ───────────────────

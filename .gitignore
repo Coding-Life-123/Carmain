@@ -14,8 +14,12 @@ app/pubspec.lock
 # Go
 servidor-go/servidor-go
 servidor-go/servidor-go.exe
+servidor-go/carmain-server.exe
+servidor-go/carmain-server.exe~
 servidor-go/.env
 servidor-go/vendor/
+servidor-go/build/
+servidor-go/*.log
 
 # IDE
 .idea/

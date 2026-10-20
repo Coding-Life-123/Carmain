@@ -28,6 +28,8 @@ func main() {
 	api := r.Group("/api")
 	{
 		api.GET("/plan", h.PlanHandler)
+		api.GET("/motorizacion", h.MotorizacionHandler)
+		api.GET("/componente", h.ComponenteHandler)
 		api.POST("/sesion", h.CrearSesionHandler)
 		api.DELETE("/sesion/:codigo", h.RevocarSesionHandler)
 	}

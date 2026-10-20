@@ -1,3 +1,5 @@
+import 'package:json_annotation/json_annotation.dart';
+
 /// Tipo de tracción del vehículo.
 enum Drivetrain {
   fwd('FWD'),
@@ -97,6 +99,9 @@ enum TipoTransmision {
 enum FuentePlan {
   oem('OEM'),
   web('Web'),
+
+  /// Viaja como 'ia' en JSON — contrato con el backend Go.
+  @JsonValue('ia')
   iaInferida('IA');
 
   const FuentePlan(this.label);

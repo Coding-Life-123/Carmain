@@ -30,6 +30,13 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // R8 (minificación) rompe plugins que usan el puente JNI: elimina
+            // métodos que solo se invocan desde Dart por reflexión y que R8 no
+            // puede ver (p. ej. SharedPreferencesApiRegistrar.getAll de
+            // shared_preferences_android 2.5.x → NoSuchMethodError solo en
+            // release, pantalla negra). App sideloadada: robustez > tamaño.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

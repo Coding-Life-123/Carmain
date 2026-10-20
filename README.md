@@ -5,7 +5,7 @@ App de gestión de mantenimientos preventivos de vehículos con investigación I
 ## Stack
 
 - **Mobile**: Flutter (Dart) — Drift (SQLite local), Riverpod, dio
-- **Backend**: Go — gin (REST), gorilla/websocket (relay), Claude API
+- **Backend**: Go — gin (REST), gorilla/websocket (relay), Gemini API (búsqueda web con Google Search)
 
 ## Estructura
 
