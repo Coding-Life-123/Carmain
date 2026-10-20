@@ -209,150 +209,206 @@ class _AjustesSheet extends ConsumerWidget {
   }
 
   void _editarUrl(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController(text: ref.read(servidorUrlProvider));
-    final keyController =
-        TextEditingController(text: ref.read(servidorApiKeyProvider));
-    String? error;
-    _EstadoProbe probe = _EstadoProbe.inactivo;
-    int? probeMs;
-    String? probeError;
-
     showDialog<void>(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setState) {
-            return AlertDialog(
-              title: const Text('Servidor Backend'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    keyboardType: TextInputType.url,
-                    decoration: InputDecoration(
-                      hintText: 'http://192.168.1.50:8080',
-                      border: const OutlineInputBorder(),
-                      errorText: error,
-                    ),
-                    onChanged: (_) {
-                      if (error != null) setState(() => error = null);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: keyController,
-                    decoration: const InputDecoration(
-                      labelText: 'API Key (opcional)',
-                      hintText: 'solo si el servidor la exige',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Prueba contra /api/health (público): valida URL/TLS/
-                  // alcanzabilidad con lo escrito, antes de Guardar.
-                  OutlinedButton.icon(
-                    onPressed: probe == _EstadoProbe.probando
-                        ? null
-                        : () async {
-                            final url = controller.text.trim();
-                            final err = _validarUrl(url);
-                            if (err != null) {
-                              setState(() {
-                                error = err;
-                                probe = _EstadoProbe.inactivo;
-                              });
-                              return;
-                            }
-                            setState(() {
-                              probe = _EstadoProbe.probando;
-                              probeError = null;
-                            });
-                            try {
-                              final latencia = await ApiClient.probarConexion(
-                                baseUrl: ServidorUrlNotifier.normalizar(url),
-                                apiKey: keyController.text.trim(),
-                              );
-                              setState(() {
-                                probe = _EstadoProbe.ok;
-                                probeMs = latencia.inMilliseconds;
-                              });
-                            } catch (e) {
-                              setState(() {
-                                probe = _EstadoProbe.error;
-                                probeError = _mensajeProbe(e);
-                              });
-                            }
-                          },
-                    icon: probe == _EstadoProbe.probando
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.wifi_tethering),
-                    label: Text(probe == _EstadoProbe.probando
-                        ? 'Probando…'
-                        : 'Probar conexión'),
-                  ),
-                  if (probe == _EstadoProbe.ok)
-                    Text(
-                      'Conectado — $probeMs ms',
-                      style: TextStyle(
-                        color: Theme.of(ctx).colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    )
-                  else if (probe == _EstadoProbe.error)
-                    Text(
-                      probeError!,
-                      style: TextStyle(
-                        color: Theme.of(ctx).colorScheme.error,
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Emulador Android: http://10.0.2.2:8080\n'
-                    'Dispositivo físico: IP LAN de este PC\n'
-                    'Desde cualquier red: IP de Tailscale (http://100.x.y.z:8080)\n'
-                    'Producción (VPS): https://<subdominio>.duckdns.org',
-                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancelar'),
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    final url = controller.text.trim();
-                    final err = _validarUrl(url);
-                    if (err != null) {
-                      setState(() => error = err);
-                      return;
-                    }
-                    await ref.read(servidorUrlProvider.notifier).setUrl(url);
-                    await ref
-                        .read(servidorApiKeyProvider.notifier)
-                        .setApiKey(keyController.text);
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  },
-                  child: const Text('Guardar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    ).whenComplete(() {
-      controller.dispose();
-      keyController.dispose();
+      builder: (_) => EditarServidorDialog(
+        initialUrl: ref.read(servidorUrlProvider),
+        initialApiKey: ref.read(servidorApiKeyProvider),
+      ),
+    );
+  }
+}
+
+/// Diálogo de edición del servidor: URL + API key + probe de conexión.
+/// Interno de la pantalla de ajustes (público para poder testearlo).
+///
+/// Es un StatefulWidget (no un StatefulBuilder suelto con dispose manual
+/// en el futuro del showDialog) para que los controllers vivan exactamente
+/// lo que vive el widget: el dispose lo llama el framework cuando la ruta
+/// se desmonta de verdad, tras la animación de salida. El probe en vuelo
+/// verifica `mounted` antes de tocar el estado — cerrar el diálogo con la
+/// prueba pendiente ya no revienta (regresión real en el teléfono).
+class EditarServidorDialog extends ConsumerStatefulWidget {
+  const EditarServidorDialog({
+    super.key,
+    required this.initialUrl,
+    required this.initialApiKey,
+    this.probeOverride,
+  });
+
+  final String initialUrl;
+  final String initialApiKey;
+
+  /// Seam de tests: sustituye la llamada real a ApiClient.probarConexion.
+  /// El binding de widget tests mockea todo HttpClient (responde 400 sin
+  /// tocar red), así que la carrera "cerrar con el probe en vuelo" solo
+  /// se puede producir inyectando un futuro controlado.
+  final Future<Duration> Function()? probeOverride;
+
+  @override
+  ConsumerState<EditarServidorDialog> createState() =>
+      _EditarServidorDialogState();
+}
+
+class _EditarServidorDialogState extends ConsumerState<EditarServidorDialog> {
+  late final TextEditingController _urlController;
+  late final TextEditingController _keyController;
+  String? _error;
+  _EstadoProbe _probe = _EstadoProbe.inactivo;
+  int? _probeMs;
+  String? _probeError;
+
+  @override
+  void initState() {
+    super.initState();
+    _urlController = TextEditingController(text: widget.initialUrl);
+    _keyController = TextEditingController(text: widget.initialApiKey);
+  }
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _keyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _probar() async {
+    final url = _urlController.text.trim();
+    final err = _validarUrl(url);
+    if (err != null) {
+      if (!mounted) return;
+      setState(() {
+        _error = err;
+        _probe = _EstadoProbe.inactivo;
+      });
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _probe = _EstadoProbe.probando;
+      _probeError = null;
     });
+    final probe = widget.probeOverride ??
+        () => ApiClient.probarConexion(
+              baseUrl: ServidorUrlNotifier.normalizar(url),
+              apiKey: _keyController.text.trim(),
+            );
+    try {
+      final latencia = await probe();
+      if (!mounted) return; // el diálogo cerró mientras probaba
+      setState(() {
+        _probe = _EstadoProbe.ok;
+        _probeMs = latencia.inMilliseconds;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _probe = _EstadoProbe.error;
+        _probeError = _mensajeProbe(e);
+      });
+    }
+  }
+
+  Future<void> _guardar() async {
+    final url = _urlController.text.trim();
+    final err = _validarUrl(url);
+    if (err != null) {
+      setState(() => _error = err);
+      return;
+    }
+    await ref.read(servidorUrlProvider.notifier).setUrl(url);
+    await ref
+        .read(servidorApiKeyProvider.notifier)
+        .setApiKey(_keyController.text);
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Servidor Backend'),
+      // Con el teclado abierto el contenido puede exceder la altura
+      // disponible — scrollable evita el overflow.
+      scrollable: true,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _urlController,
+            autofocus: true,
+            keyboardType: TextInputType.url,
+            decoration: InputDecoration(
+              hintText: 'http://192.168.1.50:8080',
+              border: const OutlineInputBorder(),
+              errorText: _error,
+            ),
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _keyController,
+            decoration: const InputDecoration(
+              labelText: 'API Key (opcional)',
+              hintText: 'solo si el servidor la exige',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Prueba contra /api/health (público): valida URL/TLS/
+          // alcanzabilidad con lo escrito, antes de Guardar.
+          OutlinedButton.icon(
+            onPressed: _probe == _EstadoProbe.probando ? null : _probar,
+            icon: _probe == _EstadoProbe.probando
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.wifi_tethering),
+            label: Text(_probe == _EstadoProbe.probando
+                ? 'Probando…'
+                : 'Probar conexión'),
+          ),
+          if (_probe == _EstadoProbe.ok)
+            Text(
+              'Conectado — $_probeMs ms',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            )
+          else if (_probe == _EstadoProbe.error)
+            Text(
+              _probeError!,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          const SizedBox(height: 12),
+          Text(
+            'Emulador Android: http://10.0.2.2:8080\n'
+            'Dispositivo físico: IP LAN de este PC\n'
+            'Desde cualquier red: IP de Tailscale (http://100.x.y.z:8080)\n'
+            'Producción (VPS): https://<subdominio>.duckdns.org',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _guardar,
+          child: const Text('Guardar'),
+        ),
+      ],
+    );
   }
 
   /// Valida que la URL tenga esquema http/https y host. Retorna el mensaje
