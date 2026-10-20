@@ -292,7 +292,8 @@ class _AjustesSheet extends ConsumerWidget {
                   Text(
                     'Emulador Android: http://10.0.2.2:8080\n'
                     'Dispositivo físico: IP LAN de este PC\n'
-                    'Producción: https://<subdominio>.duckdns.org',
+                    'Desde cualquier red: IP de Tailscale (http://100.x.y.z:8080)\n'
+                    'Producción (VPS): https://<subdominio>.duckdns.org',
                     style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                           color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                         ),
