@@ -20,12 +20,14 @@ class RelayClient {
 
   bool get isConnected => _isConnected;
 
-  /// Conecta al relay server con un código de sesión.
-  Future<void> connect(String relayUrl) async {
+  /// Conecta al relay server con un código de sesión. [headers] viaja en
+  /// el handshake HTTP del upgrade — el X-Api-Key cuando el servidor
+  /// está expuesto a internet.
+  Future<void> connect(String relayUrl, {Map<String, String>? headers}) async {
     if (_isConnected) return;
 
     try {
-      _socket = await WebSocket.connect(relayUrl);
+      _socket = await WebSocket.connect(relayUrl, headers: headers);
       _isConnected = true;
 
       _subscription = _socket!.listen(

@@ -1,0 +1,20 @@
+[Unit]
+Description=CarMain backend (gin)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=carmain
+Group=carmain
+WorkingDirectory=/opt/carmain
+# El .env vive solo en el VPS (chmod 600, dueño carmain): GEMINI_API_KEY,
+# API_KEY y PORT. Nunca se deploya desde el repo.
+EnvironmentFile=/opt/carmain/.env
+ExecStart=/opt/carmain/carmain-server
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

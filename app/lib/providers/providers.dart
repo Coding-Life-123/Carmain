@@ -39,13 +39,13 @@ class ServidorUrlNotifier extends Notifier<String> {
   @override
   String build() {
     final prefs = ref.watch(sharedPreferencesProvider);
-    return _normalizar(prefs?.getString(_prefKey) ?? urlPorDefecto);
+    return normalizar(prefs?.getString(_prefKey) ?? urlPorDefecto);
   }
 
   /// Guarda la URL del backend y la persiste (si hay persistencia).
   Future<void> setUrl(String url) async {
     final prefs = ref.read(sharedPreferencesProvider);
-    final normalizada = _normalizar(url);
+    final normalizada = normalizar(url);
     state = normalizada;
     if (prefs == null) return; // sin persistencia — queda solo en memoria
     await prefs.setString(_prefKey, normalizada);
@@ -62,8 +62,9 @@ class ServidorUrlNotifier extends Notifier<String> {
   ///
   /// Si no parsea como URL http(s) se devuelve tal cual (sin slashes
   /// finales) — el diálogo de ajustes valida el esquema antes de llamar
-  /// a setUrl.
-  static String _normalizar(String url) {
+  /// a setUrl. Es pública: el botón "Probar conexión" normaliza lo
+  /// escrito antes de probarlo, sin esperar a Guardar.
+  static String normalizar(String url) {
     final cruda = url.trim();
     final uri = Uri.tryParse(cruda);
     if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
@@ -72,6 +73,36 @@ class ServidorUrlNotifier extends Notifier<String> {
       return '${uri.scheme}://$puerto';
     }
     return cruda.replaceAll(RegExp(r'/+$'), '');
+  }
+}
+
+/// API key del backend (header X-Api-Key), persistida en el dispositivo.
+///
+/// Vacía = el servidor no exige auth (modo LAN de desarrollo). En
+/// producción (VPS) el servidor se levanta con API_KEY configurada y
+/// solo acepta peticiones que la presenten.
+final servidorApiKeyProvider =
+    NotifierProvider<ServidorApiKeyNotifier, String>(ServidorApiKeyNotifier.new);
+
+class ServidorApiKeyNotifier extends Notifier<String> {
+  static const _prefKey = 'servidor_api_key';
+
+  @override
+  String build() =>
+      ref.watch(sharedPreferencesProvider)?.getString(_prefKey) ?? '';
+
+  /// Guarda la API key y la persiste. Vaciarla limpia la preferencia:
+  /// sin key no se persiste nada (modo LAN).
+  Future<void> setApiKey(String key) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final limpia = key.trim();
+    state = limpia;
+    if (prefs == null) return; // sin persistencia — queda solo en memoria
+    if (limpia.isEmpty) {
+      await prefs.remove(_prefKey);
+    } else {
+      await prefs.setString(_prefKey, limpia);
+    }
   }
 }
 
@@ -87,9 +118,13 @@ final repositoryProvider = Provider<VehiculoRepository>((ref) {
   return VehiculoRepository(ref.watch(databaseProvider));
 });
 
-/// Cliente HTTP del backend Go — se recrea cuando cambia la URL configurada.
+/// Cliente HTTP del backend Go — se recrea cuando cambia la URL o la
+/// API key configurada.
 final apiClientProvider = Provider<ApiClient>((ref) {
-  return ApiClient(baseUrl: ref.watch(servidorUrlProvider));
+  return ApiClient(
+    baseUrl: ref.watch(servidorUrlProvider),
+    apiKey: ref.watch(servidorApiKeyProvider),
+  );
 });
 
 /// Busca las motorizaciones de fábrica de una configuración de vehículo.

@@ -143,6 +143,12 @@ func (h *Handler) CrearSesionHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "body inválido: " + err.Error()})
 		return
 	}
+	// Cap de higiene: vehiculoId viaja en body, no en query params —
+	// CapsMiddleware no lo cubre.
+	if len(req.VehiculoID) > 64 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "vehiculoId excede 64 caracteres"})
+		return
+	}
 
 	// Duración por defecto: 1 hora
 	duracion := time.Hour

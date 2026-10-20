@@ -1,8 +1,10 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/vehiculo.dart';
 import '../../providers/providers.dart';
+import '../../services/api_client.dart';
 import '../../widgets/eliminar_vehiculo_dialog.dart';
 import '../crear_vehiculo/crear_vehiculo_screen.dart';
 import '../detalle_vehiculo/detalle_vehiculo_screen.dart';
@@ -185,7 +187,12 @@ class _AjustesSheet extends ConsumerWidget {
 
   void _editarUrl(BuildContext context, WidgetRef ref) {
     final controller = TextEditingController(text: ref.read(servidorUrlProvider));
+    final keyController =
+        TextEditingController(text: ref.read(servidorApiKeyProvider));
     String? error;
+    _EstadoProbe probe = _EstadoProbe.inactivo;
+    int? probeMs;
+    String? probeError;
 
     showDialog<void>(
       context: context,
@@ -211,9 +218,81 @@ class _AjustesSheet extends ConsumerWidget {
                     },
                   ),
                   const SizedBox(height: 12),
+                  TextField(
+                    controller: keyController,
+                    decoration: const InputDecoration(
+                      labelText: 'API Key (opcional)',
+                      hintText: 'solo si el servidor la exige',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Prueba contra /api/health (público): valida URL/TLS/
+                  // alcanzabilidad con lo escrito, antes de Guardar.
+                  OutlinedButton.icon(
+                    onPressed: probe == _EstadoProbe.probando
+                        ? null
+                        : () async {
+                            final url = controller.text.trim();
+                            final err = _validarUrl(url);
+                            if (err != null) {
+                              setState(() {
+                                error = err;
+                                probe = _EstadoProbe.inactivo;
+                              });
+                              return;
+                            }
+                            setState(() {
+                              probe = _EstadoProbe.probando;
+                              probeError = null;
+                            });
+                            try {
+                              final latencia = await ApiClient.probarConexion(
+                                baseUrl: ServidorUrlNotifier.normalizar(url),
+                                apiKey: keyController.text.trim(),
+                              );
+                              setState(() {
+                                probe = _EstadoProbe.ok;
+                                probeMs = latencia.inMilliseconds;
+                              });
+                            } catch (e) {
+                              setState(() {
+                                probe = _EstadoProbe.error;
+                                probeError = _mensajeProbe(e);
+                              });
+                            }
+                          },
+                    icon: probe == _EstadoProbe.probando
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.wifi_tethering),
+                    label: Text(probe == _EstadoProbe.probando
+                        ? 'Probando…'
+                        : 'Probar conexión'),
+                  ),
+                  if (probe == _EstadoProbe.ok)
+                    Text(
+                      'Conectado — $probeMs ms',
+                      style: TextStyle(
+                        color: Theme.of(ctx).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    )
+                  else if (probe == _EstadoProbe.error)
+                    Text(
+                      probeError!,
+                      style: TextStyle(
+                        color: Theme.of(ctx).colorScheme.error,
+                      ),
+                    ),
+                  const SizedBox(height: 12),
                   Text(
                     'Emulador Android: http://10.0.2.2:8080\n'
-                    'Dispositivo físico: IP LAN de este PC',
+                    'Dispositivo físico: IP LAN de este PC\n'
+                    'Producción: https://<subdominio>.duckdns.org',
                     style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                           color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                         ),
@@ -234,6 +313,9 @@ class _AjustesSheet extends ConsumerWidget {
                       return;
                     }
                     await ref.read(servidorUrlProvider.notifier).setUrl(url);
+                    await ref
+                        .read(servidorApiKeyProvider.notifier)
+                        .setApiKey(keyController.text);
                     if (ctx.mounted) Navigator.pop(ctx);
                   },
                   child: const Text('Guardar'),
@@ -243,7 +325,10 @@ class _AjustesSheet extends ConsumerWidget {
           },
         );
       },
-    ).then((_) => controller.dispose());
+    ).whenComplete(() {
+      controller.dispose();
+      keyController.dispose();
+    });
   }
 
   /// Valida que la URL tenga esquema http/https y host. Retorna el mensaje
@@ -256,7 +341,30 @@ class _AjustesSheet extends ConsumerWidget {
     }
     return null;
   }
+
+  /// Traduce un fallo del probe a un mensaje accionable.
+  String _mensajeProbe(Object e) {
+    if (e is DioException) {
+      switch (e.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.sendTimeout:
+          return 'Sin respuesta en 5 s (timeout)';
+        case DioExceptionType.connectionError:
+          return 'No se pudo conectar — revisa la URL o la red';
+        case DioExceptionType.receiveTimeout:
+          return 'El servidor tardó demasiado en responder';
+        case DioExceptionType.badResponse:
+          return 'El servidor respondió HTTP ${e.response?.statusCode}';
+        default:
+          return e.message ?? 'Error de conexión';
+      }
+    }
+    return e.toString();
+  }
 }
+
+/// Estado del botón "Probar conexión".
+enum _EstadoProbe { inactivo, probando, ok, error }
 
 /// Tarjeta individual de un vehículo.
 class _VehiculoCard extends StatelessWidget {

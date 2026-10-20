@@ -14,9 +14,17 @@ import 'plan_parser.dart';
 /// - WebSocket `/relay` — ruteo de mensajes dueño ↔ mecánico
 class ApiClient {
   final Dio _dio;
+  final String? _apiKey;
 
-  ApiClient({String baseUrl = 'http://localhost:8080'})
-      : _dio = Dio(BaseOptions(
+  /// [apiKey] se envía como X-Api-Key en cada petición (el servidor la
+  /// exige cuando está expuesto a internet). [adapter] es un seam de
+  /// tests: permite capturar los requests sin tocar la red.
+  ApiClient({
+    String baseUrl = 'http://localhost:8080',
+    String? apiKey,
+    HttpClientAdapter? adapter,
+  })  : _apiKey = (apiKey == null || apiKey.isEmpty) ? null : apiKey,
+        _dio = Dio(BaseOptions(
           baseUrl: baseUrl,
           connectTimeout: const Duration(seconds: 10),
           // El servidor puede tardar hasta 60s investigando con Gemini +
@@ -26,6 +34,10 @@ class ApiClient {
           // recibe y el vehículo queda con el plan base local.
           receiveTimeout: const Duration(seconds: 90),
         )) {
+    if (_apiKey != null) {
+      _dio.options.headers['X-Api-Key'] = _apiKey;
+    }
+    if (adapter != null) _dio.httpClientAdapter = adapter;
     if (kDebugMode) {
       _dio.interceptors.add(LogInterceptor(responseBody: true));
     }
@@ -33,6 +45,44 @@ class ApiClient {
 
   /// URL base configurada — útil para diagnósticos en logs.
   String get baseUrl => _dio.options.baseUrl;
+
+  /// La API key configurada (null si no hay) — tests y diagnósticos.
+  String? get apiKey => _apiKey;
+
+  /// Headers del handshake del WebSocket del relay: el middleware de
+  /// auth del servidor los valida durante el upgrade.
+  Map<String, String> relayHeaders() =>
+      _apiKey == null ? const {} : {'X-Api-Key': _apiKey};
+
+  /// Prueba de conexión: GET /api/health con timeout corto. Retorna la
+  /// latencia; lanza DioException si falla.
+  ///
+  /// Nota: /api/health es público — el probe valida URL/TLS/alcanzabilidad,
+  /// no la validez de la API key (esa se confirma en el primer uso real).
+  static Future<Duration> probarConexion({
+    required String baseUrl,
+    String? apiKey,
+    Duration timeout = const Duration(seconds: 5),
+    HttpClientAdapter? adapter,
+  }) async {
+    final dio = Dio(BaseOptions(
+      baseUrl: baseUrl,
+      connectTimeout: timeout,
+      receiveTimeout: timeout,
+      sendTimeout: timeout,
+      headers: {
+        if (apiKey != null && apiKey.isNotEmpty) 'X-Api-Key': apiKey,
+      },
+    ));
+    if (adapter != null) dio.httpClientAdapter = adapter;
+    final inicio = DateTime.now();
+    try {
+      await dio.get('/api/health');
+      return DateTime.now().difference(inicio);
+    } finally {
+      dio.close();
+    }
+  }
 
   /// Solicita el plan de mantenimiento para una configuración de vehículo.
   ///
