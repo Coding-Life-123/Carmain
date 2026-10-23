@@ -11,6 +11,7 @@ import '../models/plan_mantenimiento.dart';
 import '../models/registro_mantenimiento.dart';
 import '../models/vehiculo.dart';
 import '../services/api_client.dart';
+import '../services/api_config.dart';
 
 // ─────────────────────────── Infraestructura ───────────────────────────
 
@@ -25,16 +26,20 @@ final sharedPreferencesProvider = Provider<SharedPreferences?>((ref) {
 
 /// URL del backend Go, persistida en el dispositivo.
 ///
-/// Por defecto apunta a localhost (desarrollo con la app en desktop).
-/// Para probar contra el servidor real:
+/// Por defecto apunta al servidor del PC vía Tailscale Funnel — la app
+/// funciona sin configurar nada en una instalación limpia. El campo de
+/// Ajustes es override de desarrollo:
 /// - Emulador Android: `http://10.0.2.2:8080` (10.0.2.2 es el host desde el emulador)
-/// - Dispositivo físico: la IP LAN del PC (ej. `http://192.168.1.50:8080`)
+/// - Servidor local en la LAN: la IP LAN del PC (ej. `http://192.168.1.50:8080`)
 final servidorUrlProvider =
     NotifierProvider<ServidorUrlNotifier, String>(ServidorUrlNotifier.new);
 
 class ServidorUrlNotifier extends Notifier<String> {
   static const _prefKey = 'servidor_url';
-  static const urlPorDefecto = 'http://localhost:8080';
+
+  /// El backend público del PC (Funnel de Tailscale, HTTPS con certificado
+  /// propio). Cambia solo si el nodo/tailnet cambia.
+  static const urlPorDefecto = 'https://desktop-n1r4t4j.tail93c510.ts.net';
 
   @override
   String build() {
@@ -106,6 +111,14 @@ class ServidorApiKeyNotifier extends Notifier<String> {
   }
 }
 
+/// API key efectiva para hablar con el servidor: la manual de Ajustes
+/// (override de desarrollo) manda si existe; si no, la horneada en el
+/// build. Los usuarios finales jamás configuran nada.
+final apiKeyEfectivaProvider = Provider<String>((ref) {
+  final manual = ref.watch(servidorApiKeyProvider);
+  return manual.isNotEmpty ? manual : kApiKeyDelBuild;
+});
+
 /// Base de datos local (singleton). Vive en el dispositivo del dueño.
 final databaseProvider = Provider<AppDatabase>((ref) {
   final db = AppDatabase();
@@ -119,11 +132,11 @@ final repositoryProvider = Provider<VehiculoRepository>((ref) {
 });
 
 /// Cliente HTTP del backend Go — se recrea cuando cambia la URL o la
-/// API key configurada.
+/// API key efectiva.
 final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient(
     baseUrl: ref.watch(servidorUrlProvider),
-    apiKey: ref.watch(servidorApiKeyProvider),
+    apiKey: ref.watch(apiKeyEfectivaProvider),
   );
 });
 
@@ -138,7 +151,7 @@ final conexionServidorProvider =
   try {
     await ApiClient.probarConexion(
       baseUrl: ref.watch(servidorUrlProvider),
-      apiKey: ref.watch(servidorApiKeyProvider),
+      apiKey: ref.watch(apiKeyEfectivaProvider),
       timeout: const Duration(seconds: 4),
     );
     return true;

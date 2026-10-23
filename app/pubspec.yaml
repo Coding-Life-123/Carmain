@@ -38,6 +38,9 @@ dependencies:
   sqlite3_flutter_libs: ^0.6.0+eol
   flutter_riverpod: ^3.4.3
   dio: ^5.11.1
+  # Tipografía: Outfit (headings) + Inter (body) — identidad propia en
+  # vez del default de Material.
+  google_fonts: ^6.2.1
   json_annotation: ^4.12.0
   freezed_annotation: ^3.1.0
   path_provider: ^2.1.6

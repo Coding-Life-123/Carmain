@@ -38,15 +38,16 @@ func APIKeyMiddleware(apiKey string) gin.HandlerFunc {
 	}
 }
 
-// RateLimiter es un limitador fixed-window en memoria, por clave (API key
-// o IP). Suficiente para proteger la cuota de Gemini de un abuso
-// accidental o malintencionado; no pretende ser infraestructura de
-// producción multi-instancia.
+// RateLimiter es un limitador fixed-window en memoria, por IP. Suficiente
+// para proteger la cuota de Gemini de un abuso accidental o
+// malintencionado; no pretende ser infraestructura de producción
+// multi-instancia.
 type RateLimiter struct {
-	mu      sync.Mutex
-	limite  int
-	ventana time.Duration
-	cubetas map[string]*cubeta
+	mu          sync.Mutex
+	limite      int
+	ventana     time.Duration
+	cubetas     map[string]*cubeta
+	ultimaPurga time.Time
 }
 
 type cubeta struct {
@@ -54,8 +55,9 @@ type cubeta struct {
 	inicio time.Time
 }
 
-// maxCubetas: umbral de purga perezosa — con IPs rotativas (modo LAN sin
-// key) el mapa crecería sin límite; al pasarlo se eliminan las expiradas.
+// maxCubetas: tope duro del mapa — con IPs rotativas (avalancha IPv6,
+// modo LAN sin key) crecería sin límite. Al pasarlo se purga lo expirado
+// y se evicta al azar hasta el tope.
 const maxCubetas = 4096
 
 func NewRateLimiter(limite int, ventana time.Duration) *RateLimiter {
@@ -78,7 +80,7 @@ func (rl *RateLimiter) Permitir(clave string) (ok bool, reintentoEn time.Duratio
 		// Ventana nueva: reemplaza (o crea) la cubeta.
 		rl.cubetas[clave] = &cubeta{usos: 1, inicio: ahora}
 		if len(rl.cubetas) > maxCubetas {
-			rl.purgarExpiradas(ahora)
+			rl.purgar(ahora)
 		}
 		return true, 0
 	}
@@ -90,26 +92,38 @@ func (rl *RateLimiter) Permitir(clave string) (ok bool, reintentoEn time.Duratio
 	return true, 0
 }
 
-// purgarExpiradas elimina las cubetas cuya ventana ya cerró. Llamado con
-// el lock tomado.
-func (rl *RateLimiter) purgarExpiradas(ahora time.Time) {
-	for clave, cub := range rl.cubetas {
-		if ahora.Sub(cub.inicio) >= rl.ventana {
+// purgar acota el mapa cuando supera maxCubetas. El escaneo completo está
+// amortizado a lo sumo una vez por ventana: bajo avalancha de IPs
+// rotativas, un escaneo por inserción sería cuadrático bajo el mutex
+// global (medido: 20k IPs → ~6s de CPU serializada). Si tras purgar
+// siguen sobrando cubetas frescas, se evicta al azar hasta el tope —
+// preferible degradar la cuota de alguien antes que colapsar el mutex.
+// Llamado con el lock tomado.
+func (rl *RateLimiter) purgar(ahora time.Time) {
+	if ahora.Sub(rl.ultimaPurga) >= rl.ventana {
+		rl.ultimaPurga = ahora
+		for clave, cub := range rl.cubetas {
+			if ahora.Sub(cub.inicio) >= rl.ventana {
+				delete(rl.cubetas, clave)
+			}
+		}
+	}
+	for len(rl.cubetas) > maxCubetas {
+		for clave := range rl.cubetas {
 			delete(rl.cubetas, clave)
+			break
 		}
 	}
 }
 
-// Middleware aplica el rate limit por petición. La clave es el
-// X-Api-Key si viene (cada dispositivo autorizado tiene su cuota) o la
-// IP del cliente si no. Exceso → 429 con Retry-After.
+// Middleware aplica el rate limit por petición. El balde es por IP del
+// cliente: con la key horneada en el build todos los dispositivos
+// legítimos comparten la MISMA key, así que contar por key los fundiría
+// en un solo balde global — por IP cada dispositivo tiene su cuota.
+// Detrás de Caddy, ClientIP() resuelve la IP real (SetTrustedProxies).
 func (rl *RateLimiter) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		clave := c.GetHeader("X-Api-Key")
-		if clave == "" {
-			clave = c.ClientIP()
-		}
-		if ok, reintentoEn := rl.Permitir(clave); !ok {
+		if ok, reintentoEn := rl.Permitir(c.ClientIP()); !ok {
 			segundos := int(reintentoEn.Seconds()) + 1
 			c.Header("Retry-After", strconv.Itoa(segundos))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{

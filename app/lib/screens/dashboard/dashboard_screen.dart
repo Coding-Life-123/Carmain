@@ -42,7 +42,7 @@ class DashboardScreen extends ConsumerWidget {
                         ? Icons.cloud_done_outlined
                         : Icons.cloud_off_outlined,
                     color: conexionAsync.value == true
-                        ? Colors.green
+                        ? colorScheme.tertiary // verde racing del tema
                         : colorScheme.error,
                   ),
             tooltip: conexionAsync.value == true
@@ -159,6 +159,7 @@ class _AjustesSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final url = ref.watch(servidorUrlProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
     return SafeArea(
       child: Padding(
@@ -169,7 +170,7 @@ class _AjustesSheet extends ConsumerWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.directions_car, color: Color(0xFFD32F2F)),
+                Icon(Icons.directions_car, color: colorScheme.secondary),
                 const SizedBox(width: 10),
                 Text(
                   'CarMain v1.0.0',
@@ -350,8 +351,8 @@ class _EditarServidorDialogState extends ConsumerState<EditarServidorDialog> {
           TextField(
             controller: _keyController,
             decoration: const InputDecoration(
-              labelText: 'API Key (opcional)',
-              hintText: 'solo si el servidor la exige',
+              labelText: 'API Key (avanzado)',
+              hintText: 'déjala vacía — solo para desarrollo',
               border: OutlineInputBorder(),
             ),
           ),
@@ -466,82 +467,115 @@ class _VehiculoCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return Card(
-      elevation: 0,
+      elevation: 2,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(20),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              // Icono de vehículo.
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.directions_car_rounded,
-                  color: colorScheme.onPrimaryContainer,
-                ),
-              ),
-              const SizedBox(width: 16),
-              // Información principal.
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      vehiculo.nombreCompleto,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_formatearKm(vehiculo.kilometrajeActual)} · '
-                      '${vehiculo.drivetrain.label}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header con gradiente ──
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 20, 12, 20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    colorScheme.primary,
+                    colorScheme.primary.withValues(alpha: 0.85),
                   ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
               ),
-              // Chip de swap si aplica.
-              if (vehiculo.tieneSwap) ...[
-                const SizedBox(width: 8),
-                _SwapChip(),
-              ],
-              // Menú de acciones: editar / eliminar (CRUD).
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert),
-                tooltip: 'Acciones',
-                onSelected: (accion) {
-                  switch (accion) {
-                    case 'editar':
-                      onEditar();
-                    case 'eliminar':
-                      onEliminar();
-                  }
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'editar', child: Text('Editar')),
-                  PopupMenuItem(value: 'eliminar', child: Text('Eliminar')),
+              child: Row(
+                children: [
+                  // Icono grande del vehículo.
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: colorScheme.onPrimary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Icon(
+                      Icons.directions_car_rounded,
+                      color: colorScheme.onPrimary,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${vehiculo.marca} ${vehiculo.modelo}',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: colorScheme.onPrimary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '${vehiculo.anio}',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: colorScheme.onPrimary.withValues(alpha: 0.7),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Menú de acciones: editar / eliminar (CRUD).
+                  PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert, color: colorScheme.onPrimary),
+                    tooltip: 'Acciones',
+                    onSelected: (accion) {
+                      switch (accion) {
+                        case 'editar':
+                          onEditar();
+                        case 'eliminar':
+                          onEliminar();
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'editar', child: Text('Editar')),
+                      PopupMenuItem(value: 'eliminar', child: Text('Eliminar')),
+                    ],
+                  ),
                 ],
               ),
-            ],
-          ),
+            ),
+            // ── Body: stats y swap en pills ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _StatPill(
+                    icon: Icons.speed,
+                    label: _formatearKm(vehiculo.kilometrajeActual),
+                  ),
+                  _StatPill(
+                    icon: Icons.settings,
+                    label: vehiculo.drivetrain.label,
+                  ),
+                  _StatPill(
+                    icon: Icons.local_gas_station,
+                    label: vehiculo.motor.codigo,
+                  ),
+                  if (vehiculo.tieneSwap) _SwapChip(),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -564,6 +598,43 @@ class _VehiculoCard extends StatelessWidget {
 }
 
 /// Chip rojo que indica que el vehículo tiene componentes swap.
+/// Pill compacto de una estadística del vehículo (km, tracción, motor).
+class _StatPill extends StatelessWidget {
+  const _StatPill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Chip verde racing que indica que el vehículo tiene componentes swap —
+/// una modificación de performance, no un error.
 class _SwapChip extends StatelessWidget {
   const _SwapChip();
 
@@ -571,17 +642,25 @@ class _SwapChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: colorScheme.errorContainer,
+        color: colorScheme.tertiary.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.tertiary.withValues(alpha: 0.3)),
       ),
-      child: Text(
-        'Swap',
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: colorScheme.onErrorContainer,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.swap_horiz, size: 14, color: colorScheme.tertiary),
+          const SizedBox(width: 4),
+          Text(
+            'Swap',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colorScheme.tertiary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -131,6 +131,40 @@ func TestInvestigarComponenteSinApiKey(t *testing.T) {
 	}
 }
 
+// TestCodigoPlaceholderCaeADescripcion: Gemini a veces escribe
+// "Desconocido" como código cuando no conoce el de fábrica (visto en
+// producción: las cajas de un Kia Sportage 2002). Debe caer a la
+// descripcion — el tipo/marchas siguen alimentando el autollenado.
+func TestCodigoPlaceholderCaeADescripcion(t *testing.T) {
+	resp := parsearRespuestaComponente("transmision",
+		`{"codigo": "Desconocido", "descripcion": "manual 5 velocidades", "tipo": "manual", "marchas": 5}`)
+	if !resp.Encontrado {
+		t.Fatal("con descripcion útil debe ser encontrado")
+	}
+	op, ok := resp.Opcion.(shared.OpcionTransmision)
+	if !ok {
+		t.Fatalf("Opcion debe ser OpcionTransmision, got %T", resp.Opcion)
+	}
+	if op.Codigo != "manual 5 velocidades" {
+		t.Errorf("codigo placeholder debe caer a la descripcion, got %q", op.Codigo)
+	}
+	if op.Marchas != 5 || op.Tipo != "manual" {
+		t.Errorf("el resto del dato debe sobrevivir: marchas=%d tipo=%q", op.Marchas, op.Tipo)
+	}
+
+	// Placeholder sin descripcion: el codigo queda vacío (el usuario ya
+	// tecleó el suyo) pero el detalle aún autollena.
+	resp = parsearRespuestaComponente("transmision",
+		`{"codigo": "UNKNOWN", "tipo": "manual", "marchas": 5}`)
+	if !resp.Encontrado {
+		t.Fatal("con tipo/marchas aún es encontrado")
+	}
+	op = resp.Opcion.(shared.OpcionTransmision)
+	if op.Codigo != "" {
+		t.Errorf("placeholder sin descripcion debe dejar el codigo vacío, got %q", op.Codigo)
+	}
+}
+
 // TestNumeroTolerante valida la normalización de potencia/torque: números,
 // strings con unidad (convertidos con factor exacto si son conocidos,
 // rechazados si no), y formatos ambiguos → rechazados.

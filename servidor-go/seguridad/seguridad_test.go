@@ -1,6 +1,7 @@
 package seguridad
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -111,13 +112,50 @@ func TestRateLimiterRetryAfterPresente(t *testing.T) {
 	}
 }
 
-func TestRateLimiterClavesIndependientes(t *testing.T) {
-	rl := NewRateLimiter(1, 50*time.Millisecond)
+func TestRateLimiterPorIPNoPorKey(t *testing.T) {
+	rl := NewRateLimiter(2, 50*time.Millisecond)
 	r := routerDePrueba(rl.Middleware())
 
-	pedir(r, "key-a") // agota key-a
-	if code := pedir(r, "key-b").Code; code != http.StatusOK {
-		t.Errorf("key-b no debe verse afectada por key-a, got %d", code)
+	pedirDesde := func(keyHeader, remoteAddr string) int {
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		if keyHeader != "" {
+			req.Header.Set("X-Api-Key", keyHeader)
+		}
+		req.RemoteAddr = remoteAddr
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	// La key ya no define el balde: misma IP con keys distintas lo comparte
+	// (todos los dispositivos legítimos usan la misma key del build).
+	if pedirDesde("key-a", "1.1.1.1:1") != http.StatusOK ||
+		pedirDesde("key-b", "1.1.1.1:1") != http.StatusOK {
+		t.Fatal("las dos primeras peticiones de la misma IP deben pasar")
+	}
+	if code := pedirDesde("key-a", "1.1.1.1:1"); code != http.StatusTooManyRequests {
+		t.Errorf("misma IP con distinta key debe compartir el balde: esperado 429, got %d", code)
+	}
+
+	// IP distinta → balde propio.
+	if code := pedirDesde("key-a", "2.2.2.2:2"); code != http.StatusOK {
+		t.Errorf("IP distinta no debe verse afectada, got %d", code)
+	}
+}
+
+func TestRateLimiterTopeDuroDeCubetas(t *testing.T) {
+	// Avalancha de IPs distintas con ventana larga (nada expira): el
+	// mapa debe quedar acotado a maxCubetas, no crecer por inserción.
+	rl := NewRateLimiter(1, time.Hour)
+	for i := 0; i < maxCubetas+100; i++ {
+		rl.Permitir(fmt.Sprintf("10.0.%d.%d", i/256, i%256))
+	}
+
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	if len(rl.cubetas) > maxCubetas {
+		t.Errorf("el mapa debe quedar acotado a %d cubetas, got %d",
+			maxCubetas, len(rl.cubetas))
 	}
 }
 

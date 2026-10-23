@@ -214,7 +214,7 @@ Reglas:
 - "drivetrain" es la tracción de fábrica de ese modelo/año (ej. Mustang → RWD, Golf → FWD). DEBE ser exactamente uno de los valores listados; si el modelo se ofreció con varias tracciones o no estás seguro, OMÍTELO.
 - "potenciaHp" es la potencia de esa motorización en caballos de fuerza (HP) y "torqueNm" su torque en newton-metro (Nm): números sin unidad. Si la fuente solo da otra unidad, CONVIERTE exactamente con: 1 kW = 1.341 HP; 1 PS (CV) = 0.9863 HP; 1 lb-ft = 1.3558 Nm; 1 kgm = 9.8067 Nm. NUNCA reportes la cifra de otra unidad sin convertir.
 - Lista TODAS las motorizaciones de fábrica de ese modelo/año (típicamente 1 a 4 opciones).
-- Usa códigos reales de fábrica; si un código no existe públicamente, usa un nombre descriptivo corto.
+- Usa códigos reales de fábrica; si un código no existe públicamente, usa un nombre descriptivo corto (ej. "Manual 5 velocidades"). NUNCA escribas "Desconocido", "Unknown" o "N/A" como código.
 - Campos opcionales (descripcion, cilindrada, cilindros, aspiracion, potenciaHp, torqueNm, marchas): omítelos si no los conoces con certeza.
 - Si no encuentras datos confiables del vehículo, devuelve {"motores": [], "transmisiones": []}. NO inventes.`,
 		marca, modelo, anio, trimTexto)

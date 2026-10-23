@@ -66,6 +66,26 @@ void main() {
     expect(container.read(apiClientProvider).apiKey, 'nueva');
   });
 
+  test('la key efectiva prefiere la manual y cae a la del build', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final container = ProviderContainer(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    );
+    addTearDown(container.dispose);
+
+    // Sin key manual → la horneada en el build (vacía en tests, que no
+    // usan --dart-define).
+    expect(container.read(apiKeyEfectivaProvider), '');
+
+    // La manual (override de desarrollo) manda.
+    await container.read(servidorApiKeyProvider.notifier).setApiKey('manual');
+    expect(container.read(apiKeyEfectivaProvider), 'manual');
+
+    // Vaciar la manual vuelve a la del build.
+    await container.read(servidorApiKeyProvider.notifier).setApiKey('');
+    expect(container.read(apiKeyEfectivaProvider), '');
+  });
+
   test('ApiClient envía X-Api-Key cuando hay key', () async {
     final grabador = _AdapterGrabador();
     final client = ApiClient(

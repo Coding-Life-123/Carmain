@@ -101,6 +101,34 @@ func TestParsearRespuestaMotorizacion(t *testing.T) {
 	}
 }
 
+// TestParsearRespuestaMotorizacionCodigoPlaceholder: Gemini a veces
+// escribe "Desconocido"/"N/A" como código (regresión real: las cajas del
+// Kia Sportage 2002). Con descripcion cae a ella; sin descripcion la
+// opción se descarta.
+func TestParsearRespuestaMotorizacionCodigoPlaceholder(t *testing.T) {
+	resp := parsearRespuestaMotorizacion(`{
+		"motores": [
+			{"codigo": "Desconocido", "descripcion": "2.0L I4", "combustible": "gasolina"}
+		],
+		"transmisiones": [
+			{"codigo": "Desconocido", "descripcion": "manual 5 velocidades", "tipo": "manual", "marchas": 5},
+			{"codigo": "N/A", "tipo": "automatica"}
+		]
+	}`)
+
+	if len(resp.Motores) != 1 || resp.Motores[0].Codigo != "2.0L I4" {
+		t.Errorf("motor con codigo placeholder debe caer a la descripcion: %v", resp.Motores)
+	}
+	if len(resp.Transmisiones) != 1 {
+		t.Fatalf("transmision placeholder sin descripcion debe descartarse, got %d: %v",
+			len(resp.Transmisiones), resp.Transmisiones)
+	}
+	if resp.Transmisiones[0].Codigo != "manual 5 velocidades" {
+		t.Errorf("caja placeholder debe caer a la descripcion, got %q",
+			resp.Transmisiones[0].Codigo)
+	}
+}
+
 // TestExtraerJSON valida la limpieza de markdown/texto alrededor del JSON.
 func TestExtraerJSON(t *testing.T) {
 	casos := []struct {

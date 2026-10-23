@@ -14,7 +14,10 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    expect(container.read(servidorUrlProvider), 'http://localhost:8080');
+    // El default es el servidor del PC vía Funnel — instalación limpia
+    // funciona sin configurar nada. La normalización añade el :443.
+    expect(container.read(servidorUrlProvider),
+        'https://desktop-n1r4t4j.tail93c510.ts.net:443');
   });
 
   test('setUrl persiste y el ApiClient se recrea con la nueva URL', () async {

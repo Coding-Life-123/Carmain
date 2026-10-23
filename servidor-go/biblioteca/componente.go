@@ -128,6 +128,32 @@ func parsearRespuestaComponente(tipo, texto string) *respuestaComponente {
 	return &respuestaComponente{}
 }
 
+// codigosPlaceholder: valores que Gemini escribe en "codigo" cuando no
+// conoce el código de fábrica (visto en producción: "Desconocido" en las
+// cajas de un Kia Sportage 2002). No sirven ni como dato ni como
+// identificador — se degradan a la descripcion.
+var codigosPlaceholder = map[string]bool{
+	"desconocido": true, "unknown": true, "n/a": true, "na": true,
+	"no disponible": true, "not available": true, "ninguno": true,
+	"none": true, "?": true, "-": true,
+}
+
+// codigoUtil degrada códigos placeholder a la descripcion (un nombre
+// descriptivo corto es honesto y editable; el tipo/marchas siguen
+// alimentando el autollenado). Sin descripcion útil → "" y la opción se
+// descarta en el router.
+func codigoUtil(codigo, descripcion string) string {
+	codigo = strings.TrimSpace(codigo)
+	descripcion = strings.TrimSpace(descripcion)
+	if codigo == "" || codigosPlaceholder[strings.ToLower(codigo)] {
+		if descripcion != "" && !codigosPlaceholder[strings.ToLower(descripcion)] {
+			return descripcion
+		}
+		return ""
+	}
+	return codigo
+}
+
 // parsearOpcionMotor extrae los campos con tolerancia de tipos: Gemini a
 // veces devuelve números como strings ("cilindros": "4") y el contrato con
 // la app espera números de verdad.
@@ -148,6 +174,7 @@ func parsearOpcionMotor(crudo map[string]any) shared.OpcionMotor {
 	if v, ok := numeroTolerante(crudo["torqueNm"], "Nm"); ok {
 		op.TorqueNm = &v
 	}
+	op.Codigo = codigoUtil(op.Codigo, op.Descripcion)
 	return op
 }
 
@@ -159,6 +186,7 @@ func parsearOpcionTransmision(crudo map[string]any) shared.OpcionTransmision {
 	if v, ok := numeroComponente(crudo, "marchas"); ok {
 		op.Marchas = int(v)
 	}
+	op.Codigo = codigoUtil(op.Codigo, op.Descripcion)
 	return op
 }
 

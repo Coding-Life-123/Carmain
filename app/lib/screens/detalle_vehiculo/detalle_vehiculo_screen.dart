@@ -541,17 +541,17 @@ String _formatearFecha(DateTime fecha) {
   return switch (estado) {
     EstadoItem.vencido => (
       icon: Icons.warning_amber_rounded,
-      color: const Color(0xFFD32F2F),
+      color: const Color(0xFFB33951), // rojo vino de la paleta
       label: 'Vencido',
     ),
     EstadoItem.proximo => (
       icon: Icons.schedule,
-      color: const Color(0xFFF57C00),
+      color: const Color(0xFFCC8B1F), // ámbar cálido
       label: 'Próximo',
     ),
     EstadoItem.ok => (
       icon: Icons.check_circle,
-      color: const Color(0xFF388E3C),
+      color: const Color(0xFF2D6A4F), // verde racing de la paleta
       label: 'Al día',
     ),
   };

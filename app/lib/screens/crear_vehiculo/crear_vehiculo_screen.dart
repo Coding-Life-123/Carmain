@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -256,6 +257,16 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
   /// info útil (evita el espacio vacío de un helperText "").
   String? _helperCodigo(String? descripcion) =>
       (descripcion != null && descripcion.isNotEmpty) ? descripcion : null;
+
+  /// ¿El servidor rechazó la petición por API key inválida? Distinto de
+  /// "sin conexión": el túnel funciona, la key no coincide — sin esta
+  /// distinción el usuario cree que la red está rota.
+  bool _esAuthInvalida(Object? error) =>
+      error is DioException && error.response?.statusCode == 401;
+
+  String _mensajeErrorServidor(Object? error) => _esAuthInvalida(error)
+      ? 'API key inválida — revísala en Ajustes'
+      : 'Sin conexión con el servidor — completa a mano';
 
   /// Rellena los campos del motor con una opción.
   ///
@@ -603,11 +614,16 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
                 else if (sugerenciasAsync.hasError)
                   Row(
                     children: [
-                      Icon(Icons.cloud_off,
-                          size: 14, color: theme.colorScheme.error),
+                      Icon(
+                        _esAuthInvalida(sugerenciasAsync.error)
+                            ? Icons.key_off
+                            : Icons.cloud_off,
+                        size: 14,
+                        color: theme.colorScheme.error,
+                      ),
                       const SizedBox(width: 6),
                       Text(
-                        'Sin conexión con el servidor — completa a mano',
+                        _mensajeErrorServidor(sugerenciasAsync.error),
                         style: TextStyle(
                             fontSize: 12, color: theme.colorScheme.error),
                       ),
