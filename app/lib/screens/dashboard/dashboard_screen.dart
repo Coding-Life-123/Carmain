@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../models/plan_mantenimiento.dart';
 import '../../models/vehiculo.dart';
 import '../../providers/providers.dart';
 import '../../services/api_client.dart';
@@ -18,11 +19,27 @@ import '../detalle_vehiculo/detalle_vehiculo_screen.dart';
 /// Muestra la lista de vehículos del usuario con su estado básico,
 /// un FAB para crear vehículos nuevos y los estados de carga, error
 /// y vacío correspondientes.
-class DashboardScreen extends ConsumerWidget {
+enum FiltroEstadoDashboard { todos, pendientes, alDia }
+
+class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  final _busquedaController = TextEditingController();
+  FiltroEstadoDashboard _filtroEstado = FiltroEstadoDashboard.todos;
+
+  @override
+  void dispose() {
+    _busquedaController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final vehiculosAsync = ref.watch(vehiculosProvider);
     // Probe de conexión con el backend: arranca al abrir la app y al
     // tocar el icono se re-prueba.
@@ -76,51 +93,232 @@ class DashboardScreen extends ConsumerWidget {
               onCrear: () => _navegarCrearVehiculo(context),
             );
           }
-          // Vehículos con mantenimientos vencidos (luego próximos) primero.
-          // `sort` de Dart no es estable, así que el índice original desempata.
-          final urgencia = <String, int>{
+
+          // Resumen de mantenimientos para ordenar y filtrar por urgencia.
+          final resumenes = <String, ResumenPlan>{
             for (final v in vehiculos)
               v.id: ResumenPlan.de(
                 ref.watch(planProvider(v.id)).value,
                 v.kilometrajeActual,
                 v.tipoUso,
-              ).peor.index,
+              ),
           };
           final orden = {
             for (var i = 0; i < vehiculos.length; i++) vehiculos[i].id: i,
           };
           vehiculos = [...vehiculos]..sort((a, b) {
-              final c = urgencia[a.id]!.compareTo(urgencia[b.id]!);
+              final c = resumenes[a.id]!.peor.index.compareTo(resumenes[b.id]!.peor.index);
               return c != 0 ? c : orden[a.id]!.compareTo(orden[b.id]!);
             });
+
+          final totalPendientes = vehiculos
+              .where((v) =>
+                  (resumenes[v.id]?.vencidos ?? 0) > 0 ||
+                  (resumenes[v.id]?.proximos ?? 0) > 0)
+              .length;
+          final totalAlDia = vehiculos.length - totalPendientes;
+
+          final query = _busquedaController.text.trim().toLowerCase();
+          final filtrados = vehiculos.where((v) {
+            if (query.isNotEmpty) {
+              final textoVehiculo =
+                  '${v.marca} ${v.modelo} ${v.anio} ${v.placa ?? ''} ${v.vin ?? ''} ${v.trim ?? ''}'
+                      .toLowerCase();
+              if (!textoVehiculo.contains(query)) {
+                return false;
+              }
+            }
+
+            final r = resumenes[v.id];
+            final tienePendientes = (r?.vencidos ?? 0) > 0 || (r?.proximos ?? 0) > 0;
+
+            if (_filtroEstado == FiltroEstadoDashboard.pendientes) {
+              return tienePendientes;
+            } else if (_filtroEstado == FiltroEstadoDashboard.alDia) {
+              return !tienePendientes;
+            }
+
+            return true;
+          }).toList();
+
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(vehiculosProvider),
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
-              itemCount: vehiculos.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final vehiculo = vehiculos[index];
-                return _VehiculoCard(
-                  vehiculo: vehiculo,
-                  onTap: () => _navegarDetalle(context, vehiculo.id),
-                  onEditar: () => _navegarEditar(context, vehiculo),
-                  onActualizarKm: () =>
-                      actualizarKilometraje(context, ref, vehiculo),
-                  onEliminar: () async {
-                    final eliminado = await confirmarYEliminarVehiculo(
-                        context, ref, vehiculo);
-                    if (eliminado && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content:
-                              Text('${vehiculo.nombreCompleto} eliminado'),
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Campo de búsqueda en vivo
+                        TextField(
+                          controller: _busquedaController,
+                          decoration: InputDecoration(
+                            hintText: 'Buscar marca, modelo, placa, año...',
+                            hintStyle: TextStyle(
+                              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                              fontSize: 14,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: colorScheme.primary,
+                            ),
+                            suffixIcon: _busquedaController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 20),
+                                    onPressed: () {
+                                      setState(() {
+                                        _busquedaController.clear();
+                                      });
+                                    },
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide(
+                                color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide(
+                                color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide(
+                                color: colorScheme.primary,
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                          onChanged: (_) => setState(() {}),
                         ),
-                      );
-                    }
-                  },
-                );
-              },
+                        const SizedBox(height: 10),
+                        // Chips de filtrado rápido
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              FilterChip(
+                                label: Text('Todos (${vehiculos.length})'),
+                                selected: _filtroEstado == FiltroEstadoDashboard.todos,
+                                onSelected: (_) => setState(() =>
+                                    _filtroEstado = FiltroEstadoDashboard.todos),
+                              ),
+                              const SizedBox(width: 8),
+                              FilterChip(
+                                label: Text('Con pendientes ($totalPendientes)'),
+                                selected: _filtroEstado == FiltroEstadoDashboard.pendientes,
+                                avatar: totalPendientes > 0
+                                    ? Icon(Icons.warning_amber_rounded,
+                                        size: 16, color: colorScheme.error)
+                                    : null,
+                                onSelected: (_) => setState(() =>
+                                    _filtroEstado = FiltroEstadoDashboard.pendientes),
+                              ),
+                              const SizedBox(width: 8),
+                              FilterChip(
+                                label: Text('Al día ($totalAlDia)'),
+                                selected: _filtroEstado == FiltroEstadoDashboard.alDia,
+                                avatar: totalAlDia > 0
+                                    ? Icon(Icons.check_circle_outline,
+                                        size: 16, color: colorScheme.primary)
+                                    : null,
+                                onSelected: (_) => setState(() =>
+                                    _filtroEstado = FiltroEstadoDashboard.alDia),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                      ],
+                    ),
+                  ),
+                ),
+                if (filtrados.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.search_off_rounded,
+                              size: 56,
+                              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                            ),
+                            const SizedBox(height: 14),
+                            Text(
+                              'No se encontraron vehículos',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              query.isNotEmpty
+                                  ? 'Ningún vehículo coincide con "$query".'
+                                  : 'No hay vehículos con el filtro seleccionado.',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _busquedaController.clear();
+                                  _filtroEstado = FiltroEstadoDashboard.todos;
+                                });
+                              },
+                              icon: const Icon(Icons.refresh, size: 18),
+                              label: const Text('Restablecer filtros'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
+                    sliver: SliverList.separated(
+                      itemCount: filtrados.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final vehiculo = filtrados[index];
+                        return _VehiculoCard(
+                          vehiculo: vehiculo,
+                          onTap: () => _navegarDetalle(context, vehiculo.id),
+                          onEditar: () => _navegarEditar(context, vehiculo),
+                          onActualizarKm: () =>
+                              actualizarKilometraje(context, ref, vehiculo),
+                          onEliminar: () async {
+                            final eliminado = await confirmarYEliminarVehiculo(
+                                context, ref, vehiculo);
+                            if (eliminado && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                      '${vehiculo.nombreCompleto} eliminado'),
+                                ),
+                              );
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
             ),
           );
         },
