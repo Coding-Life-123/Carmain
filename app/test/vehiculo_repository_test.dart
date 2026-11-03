@@ -604,32 +604,116 @@ void main() {
       expect(res.esEstimadoSegunUso, isFalse);
     });
 
-    test('calcula costo anual estimado segun uso cuando no hay registros', () {
-      final vNormal = _vehiculo(id: 'v-sin-datos').copyWith(
-        tipoUso: TipoUso.normal,
-        kilometrajeActual: 20000,
-      );
-      final resNormal = AnaliticaVehiculo.calcular(
-        vehiculo: vNormal,
-        plan: null,
-        registros: const [],
-      );
-      expect(resNormal.esEstimadoSegunUso, isTrue);
-      expect(resNormal.costoAnualEstimado, 1200000.0);
-      expect(resNormal.explicacionCostoAnual, contains('normal'));
-
-      final vSevero = _vehiculo(id: 'v-severo').copyWith(
+    test('calcula costo anual estimado segun segmento y perfil de vehiculo (F-450 vs Spark vs Hilux)', () {
+      // 1. Ford F-450 Super Duty 2026 (Heavy Duty Comercial) en severo
+      final f450 = Vehiculo(
+        id: 'f-450-2026',
+        propietarioId: 'local',
+        marca: 'Ford',
+        modelo: 'F-450 Super Duty',
+        anio: 2026,
+        drivetrain: Drivetrain.fourWd,
         tipoUso: TipoUso.severo,
-        kilometrajeActual: 20000,
+        motor: const Motor(
+          codigo: 'PowerStroke-6.7',
+          tipoCombustible: TipoCombustible.diesel,
+          cilindrada: 6.7,
+          cilindros: 8,
+          aspiracion: 'Turbo',
+        ),
+        transmision: const Transmision(
+          codigo: 'TorqShift-10',
+          tipo: TipoTransmision.automatica,
+          marchas: 10,
+        ),
       );
-      final resSevero = AnaliticaVehiculo.calcular(
-        vehiculo: vSevero,
+      final resF450 = AnaliticaVehiculo.calcular(
+        vehiculo: f450,
         plan: null,
         registros: const [],
       );
-      expect(resSevero.esEstimadoSegunUso, isTrue);
-      expect(resSevero.costoAnualEstimado, 1800000.0);
-      expect(resSevero.explicacionCostoAnual, contains('severo'));
+      expect(resF450.segmentoVehiculo, SegmentoVehiculo.pesadoHeavyDuty);
+      expect(resF450.costoAnualEstimado, 14500000.0);
+      expect(resF450.esEstimadoSegunUso, isTrue);
+      expect(resF450.explicacionCostoAnual, contains('Heavy Duty'));
+      expect(resF450.explicacionCostoAnual, contains('severo'));
+
+      // 2. Ford F-450 en uso normal
+      final resF450Normal = AnaliticaVehiculo.calcular(
+        vehiculo: f450.copyWith(tipoUso: TipoUso.normal),
+        plan: null,
+        registros: const [],
+      );
+      expect(resF450Normal.costoAnualEstimado, 9500000.0);
+      expect(resF450Normal.explicacionCostoAnual, contains('normal'));
+
+      // 3. Chevrolet Spark GT (Compacto urbano)
+      final spark = Vehiculo(
+        id: 'spark-gt',
+        propietarioId: 'local',
+        marca: 'Chevrolet',
+        modelo: 'Spark GT',
+        anio: 2018,
+        drivetrain: Drivetrain.fwd,
+        tipoUso: TipoUso.normal,
+        motor: const Motor(
+          codigo: 'B12D',
+          tipoCombustible: TipoCombustible.gasolina,
+          cilindrada: 1.2,
+          cilindros: 4,
+        ),
+        transmision: const Transmision(
+          codigo: 'M5',
+          tipo: TipoTransmision.manual,
+          marchas: 5,
+        ),
+      );
+      final resSpark = AnaliticaVehiculo.calcular(
+        vehiculo: spark,
+        plan: null,
+        registros: const [],
+      );
+      expect(resSpark.segmentoVehiculo, SegmentoVehiculo.compactoEconomico);
+      expect(resSpark.costoAnualEstimado, 1300000.0);
+
+      // 4. Toyota Hilux 4x4 (Pick-up / Camioneta 4x4)
+      final hilux = Vehiculo(
+        id: 'hilux-2022',
+        propietarioId: 'local',
+        marca: 'Toyota',
+        modelo: 'Hilux',
+        anio: 2022,
+        drivetrain: Drivetrain.fourWd,
+        tipoUso: TipoUso.normal,
+        motor: const Motor(
+          codigo: '1GD-FTV',
+          tipoCombustible: TipoCombustible.diesel,
+          cilindrada: 2.8,
+          cilindros: 4,
+          aspiracion: 'Turbo',
+        ),
+        transmision: const Transmision(
+          codigo: 'A6',
+          tipo: TipoTransmision.automatica,
+          marchas: 6,
+        ),
+      );
+      final resHilux = AnaliticaVehiculo.calcular(
+        vehiculo: hilux,
+        plan: null,
+        registros: const [],
+      );
+      expect(resHilux.segmentoVehiculo, SegmentoVehiculo.pickup4x4Grande);
+      expect(resHilux.costoAnualEstimado, 4600000.0);
+
+      // 5. Toyota Supra 3.0 Twin-Turbo (Gama Alta / Premium Deportivo)
+      final resSupra = AnaliticaVehiculo.calcular(
+        vehiculo: _vehiculo(id: 'supra-test'),
+        plan: null,
+        registros: const [],
+      );
+      expect(resSupra.segmentoVehiculo, SegmentoVehiculo.premiumDeportivo);
+      expect(resSupra.costoAnualEstimado, 5800000.0);
     });
   });
 }
