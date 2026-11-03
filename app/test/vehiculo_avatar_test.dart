@@ -27,8 +27,8 @@ void main() {
     });
   });
 
-  group('VehiculoAvatar widget', () {
-    testWidgets('renderiza correctamente con silueta y marca', (tester) async {
+  group('VehiculoAvatar y VehiculoSiluetaFondo widgets', () {
+    testWidgets('VehiculoAvatar renderiza exclusivamente el logo de la marca', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
@@ -40,16 +40,20 @@ void main() {
         ),
       );
 
-      // El widget se construye sin excepciones
+      // El avatar se construye sin excepciones
       expect(find.byType(VehiculoAvatar), findsOneWidget);
-      // El stack contiene la silueta de fondo y el logo
-      expect(
-        find.descendant(
-          of: find.byType(VehiculoAvatar),
-          matching: find.byType(Stack),
+    });
+
+    testWidgets('VehiculoSiluetaFondo renderiza silueta para fondo de textos', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: VehiculoSiluetaFondo(),
+          ),
         ),
-        findsOneWidget,
       );
+
+      expect(find.byType(VehiculoSiluetaFondo), findsOneWidget);
     });
 
     testWidgets('renderiza fallback de inicial si la marca está vacía o cargando',

@@ -448,7 +448,7 @@ class _VehiculoCard extends ConsumerWidget {
               ),
               child: Row(
                 children: [
-                  // Visual del vehículo: silueta genérica de fondo + logo de la marca al frente.
+                  // Logo oficial de la marca
                   Hero(
                     tag: 'vehiculo-icono-${vehiculo.id}',
                     child: VehiculoAvatar(
@@ -456,30 +456,43 @@ class _VehiculoCard extends ConsumerWidget {
                       size: 58,
                       backgroundColor:
                           colorScheme.onPrimary.withValues(alpha: 0.15),
-                      colorFondoAuto:
-                          colorScheme.onPrimary.withValues(alpha: 0.28),
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Stack(
+                      alignment: Alignment.centerLeft,
                       children: [
-                        Text(
-                          '${vehiculo.marca} ${vehiculo.modelo}',
-                          style: theme.textTheme.titleLarge?.copyWith(
+                        // Silueta del vehículo en el fondo detrás de la marca, modelo y año
+                        Positioned.fill(
+                          child: VehiculoSiluetaFondo(
                             color: colorScheme.onPrimary,
-                            fontWeight: FontWeight.bold,
+                            opacity: 0.18,
+                            alignment: Alignment.centerRight,
+                            width: 140,
+                            height: 70,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
-                          '${vehiculo.anio}',
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            color: colorScheme.onPrimary.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.w500,
-                          ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${vehiculo.marca} ${vehiculo.modelo}',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                color: colorScheme.onPrimary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              '${vehiculo.anio}',
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                color: colorScheme.onPrimary.withValues(alpha: 0.7),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

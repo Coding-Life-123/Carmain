@@ -178,37 +178,50 @@ class _SeccionInfoVehiculo extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Visual del vehículo: silueta genérica de fondo + logo de la marca al frente.
+                // Logo oficial de la marca
                 Hero(
                   tag: 'vehiculo-icono-${vehiculo.id}',
                   child: VehiculoAvatar(
                     marca: vehiculo.marca,
                     size: 58,
                     backgroundColor: cs.primaryContainer.withValues(alpha: 0.5),
-                    colorFondoAuto:
-                        cs.onPrimaryContainer.withValues(alpha: 0.28),
                   ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Stack(
+                    alignment: Alignment.centerLeft,
                     children: [
-                      Text(
-                        vehiculo.nombreCompleto,
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                      // Silueta del vehículo en el fondo detrás de la marca, modelo y año
+                      Positioned.fill(
+                        child: VehiculoSiluetaFondo(
+                          color: cs.onSurface,
+                          opacity: 0.12,
+                          alignment: Alignment.centerRight,
+                          width: 130,
+                          height: 60,
                         ),
                       ),
-                      if (vehiculo.trim != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          vehiculo.trim!,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: cs.onSurfaceVariant,
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            vehiculo.nombreCompleto,
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                      ],
+                          if (vehiculo.trim != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              vehiculo.trim!,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ],
                   ),
                 ),

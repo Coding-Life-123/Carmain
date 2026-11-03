@@ -15,8 +15,8 @@ String normalizarMarcaSlug(String marca) {
       .replaceAll(RegExp(r'^-+|-+$'), '');
 }
 
-/// Widget visual del vehículo: muestra la silueta genérica del vehículo de fondo
-/// y el logo oficial de la marca en primer plano.
+/// Avatar de marca del vehículo: muestra exclusivamente el logo oficial
+/// de la marca (o su inicial estilizada como fallback).
 class VehiculoAvatar extends StatelessWidget {
   const VehiculoAvatar({
     super.key,
@@ -35,6 +35,8 @@ class VehiculoAvatar extends StatelessWidget {
   final double? height;
   final double borderRadius;
   final Color? backgroundColor;
+
+  /// Parámetro obsoleto conservado por compatibilidad de firma.
   final Color? colorFondoAuto;
 
   @override
@@ -49,7 +51,6 @@ class VehiculoAvatar extends StatelessWidget {
         'https://raw.githubusercontent.com/filippofilip95/car-logos-dataset/master/logos/thumb/$slug.png';
 
     final bg = backgroundColor ?? cs.surfaceContainerHighest.withValues(alpha: 0.6);
-    final carTint = colorFondoAuto ?? cs.onSurface.withValues(alpha: 0.22);
 
     return Container(
       width: w,
@@ -63,28 +64,10 @@ class VehiculoAvatar extends StatelessWidget {
         ),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // ── 1. Fondo: Imagen genérica del vehículo ──
-          Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.all(w * 0.08),
-              child: Image.asset(
-                'assets/images/auto_generico.png',
-                fit: BoxFit.contain,
-                color: carTint,
-                errorBuilder: (_, _, _) => CustomPaint(
-                  painter: _AutoGenericoPainter(color: carTint),
-                ),
-              ),
-            ),
-          ),
-
-          // ── 2. Frente: Logo oficial de la marca ──
-          if (slug.isNotEmpty)
-            Padding(
-              padding: EdgeInsets.all(w * 0.16),
+      alignment: Alignment.center,
+      child: slug.isNotEmpty
+          ? Padding(
+              padding: EdgeInsets.all(w * 0.12),
               child: Image.network(
                 logoUrl,
                 fit: BoxFit.contain,
@@ -92,25 +75,63 @@ class VehiculoAvatar extends StatelessWidget {
                 errorBuilder: (_, _, _) => _FallbackMarca(
                   marca: marca,
                   color: cs.primary,
-                  size: w * 0.38,
+                  size: w * 0.40,
                 ),
                 loadingBuilder: (context, child, loadingProgress) {
                   if (loadingProgress == null) return child;
                   return _FallbackMarca(
                     marca: marca,
                     color: cs.primary.withValues(alpha: 0.5),
-                    size: w * 0.34,
+                    size: w * 0.36,
                   );
                 },
               ),
             )
-          else
-            _FallbackMarca(
+          : _FallbackMarca(
               marca: marca,
               color: cs.primary,
-              size: w * 0.38,
+              size: w * 0.40,
             ),
-        ],
+    );
+  }
+}
+
+/// Silueta / imagen vectorial del vehículo para colocar de fondo
+/// detrás del nombre de la marca, modelo y año.
+class VehiculoSiluetaFondo extends StatelessWidget {
+  const VehiculoSiluetaFondo({
+    super.key,
+    this.width = 140,
+    this.height = 70,
+    this.color,
+    this.opacity = 0.16,
+    this.alignment = Alignment.centerRight,
+  });
+
+  final double width;
+  final double height;
+  final Color? color;
+  final double opacity;
+  final Alignment alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tint = (color ?? cs.onSurface).withValues(alpha: opacity);
+
+    return Align(
+      alignment: alignment,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Image.asset(
+          'assets/images/auto_generico.png',
+          fit: BoxFit.contain,
+          color: tint,
+          errorBuilder: (_, _, _) => CustomPaint(
+            painter: _AutoGenericoPainter(color: tint),
+          ),
+        ),
       ),
     );
   }
