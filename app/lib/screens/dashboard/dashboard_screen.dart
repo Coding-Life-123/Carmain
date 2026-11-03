@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../models/plan_mantenimiento.dart';
 import '../../models/vehiculo.dart';
 import '../../providers/providers.dart';
 import '../../services/api_client.dart';
@@ -664,6 +663,7 @@ class _VehiculoCard extends ConsumerWidget {
                         // Silueta del vehículo en el fondo detrás de la marca, modelo y año
                         Positioned.fill(
                           child: VehiculoSiluetaFondo(
+                            vehiculo: vehiculo,
                             color: colorScheme.onPrimary,
                             opacity: 0.18,
                             alignment: Alignment.centerRight,

@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../data/vehiculo_repository.dart';
 import '../models/snapshot_mecanico.dart';
 import '../models/vehiculo.dart';
 import '../providers/providers.dart';
@@ -249,7 +248,6 @@ class _CompartirVehiculoSheetState extends ConsumerState<CompartirVehiculoSheet>
 
   Widget _buildConfiguracionPrivacidad(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

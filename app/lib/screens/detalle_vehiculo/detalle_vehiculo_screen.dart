@@ -195,6 +195,7 @@ class _SeccionInfoVehiculo extends StatelessWidget {
                       // Silueta del vehículo en el fondo detrás de la marca, modelo y año
                       Positioned.fill(
                         child: VehiculoSiluetaFondo(
+                          vehiculo: vehiculo,
                           color: cs.onSurface,
                           opacity: 0.12,
                           alignment: Alignment.centerRight,
