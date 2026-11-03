@@ -264,7 +264,7 @@ function renderIngreso(): string {
             id="input-codigo"
             type="text"
             maxlength="6"
-            placeholder="ABC123"
+            placeholder="7X9K2A"
             class="codigo-input"
             autocomplete="off"
             autocapitalize="characters"
@@ -278,7 +278,7 @@ function renderIngreso(): string {
         </form>
 
         <div style="margin-top: 32px; font-size: 13px; color: var(--text-muted);">
-          ¿No tienes un código? Pídeselo al dueño desde su aplicación CarMain en el botón "Compartir con taller".
+          ¿No tienes un código? Pídeselo al dueño desde su app CarMain en "Compartir con taller" (no es la placa del auto).
         </div>
       </div>
     </div>
