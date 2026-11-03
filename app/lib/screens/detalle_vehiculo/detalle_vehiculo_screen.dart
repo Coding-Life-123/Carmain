@@ -321,9 +321,11 @@ class _SeccionAnaliticaFinanciera extends ConsumerWidget {
             subtitle: Text(
               analitica.costoPorKm != null
                   ? '${formatearCop(analitica.costoPorKm!)} / km · ${analitica.porcentajeHistorialVerificado.toStringAsFixed(0)}% verificado'
-                  : (kmPorDia != null
-                      ? 'Ritmo: ~${kmPorDia.toStringAsFixed(0)} km/día'
-                      : 'Sin lecturas de ritmo aún'),
+                  : (analitica.costoAnualEstimado != null
+                      ? 'Est. ~${formatearCop(analitica.costoAnualEstimado!)}/año · ${analitica.porcentajeHistorialVerificado.toStringAsFixed(0)}% verificado'
+                      : (kmPorDia != null
+                          ? 'Ritmo: ~${kmPorDia.toStringAsFixed(0)} km/día'
+                          : 'Sin lecturas de ritmo aún')),
               style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
             ),
             children: [
@@ -429,6 +431,34 @@ class _SeccionAnaliticaFinanciera extends ConsumerWidget {
                         ],
                       ),
                     ),
+                    if (analitica.costoAnualEstimado != null) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            analitica.esEstimadoSegunUso
+                                ? Icons.lightbulb_outline
+                                : Icons.auto_graph_outlined,
+                            size: 15,
+                            color: cs.secondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              analitica.esEstimadoSegunUso
+                                  ? 'Estimado de costo anual: ~${formatearCop(analitica.costoAnualEstimado!)}/año (${analitica.explicacionCostoAnual}). Se afinará automáticamente con tus registros.'
+                                  : 'Costo anual estimado: ~${formatearCop(analitica.costoAnualEstimado!)}/año (${analitica.explicacionCostoAnual}).',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontSize: 11,
+                                color: cs.onSurfaceVariant,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),

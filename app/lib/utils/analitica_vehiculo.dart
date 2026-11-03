@@ -8,6 +8,9 @@ class ResumenAnaliticaVehiculo {
   final double costoTotal;
   final double? costoPorKm;
   final double? presupuestoProximoServicio;
+  final double? costoAnualEstimado;
+  final bool esEstimadoSegunUso;
+  final String? explicacionCostoAnual;
   final int itemsVencidosOProximos;
   final double porcentajeHistorialVerificado;
   final int totalRegistros;
@@ -18,6 +21,9 @@ class ResumenAnaliticaVehiculo {
     required this.costoTotal,
     this.costoPorKm,
     this.presupuestoProximoServicio,
+    this.costoAnualEstimado,
+    this.esEstimadoSegunUso = false,
+    this.explicacionCostoAnual,
     required this.itemsVencidosOProximos,
     required this.porcentajeHistorialVerificado,
     required this.totalRegistros,
@@ -35,6 +41,13 @@ class AnaliticaVehiculo {
     double? kmPorDia,
     DateTime? ahora,
   }) {
+    final esSevero = vehiculo.tipoUso == TipoUso.severo;
+    // Parámetros de costo base anual de mantenimiento estándar en Colombia (COP):
+    // - Uso normal (~12.000 km/año): fluidos, filtros e inspecciones regulares ~$1.200.000 COP
+    // - Uso severo (~15.000 km/año): intervalos más estrechos y mayor desgaste ~$1.800.000 COP
+    final double costoAnualBase = esSevero ? 1800000.0 : 1200000.0;
+    final double kmReferencia = esSevero ? 15000.0 : 12000.0;
+
     if (registros.isEmpty) {
       final itemsCriticos = plan?.items.where((i) {
             final st = i.estado(
@@ -47,10 +60,27 @@ class AnaliticaVehiculo {
           }).length ??
           0;
 
+      double costoAnualEstimado;
+      String explicacion;
+      if (kmPorDia != null && kmPorDia > 0) {
+        final kmAnualReal = kmPorDia * 365.25;
+        costoAnualEstimado =
+            ((costoAnualBase / kmReferencia) * kmAnualReal).roundToDouble();
+        explicacion =
+            'según uso ${esSevero ? 'severo' : 'normal'} y ritmo de ~${kmPorDia.toStringAsFixed(0)} km/día';
+      } else {
+        costoAnualEstimado = costoAnualBase;
+        explicacion =
+            'según uso ${esSevero ? 'severo' : 'normal'} (~${kmReferencia.toInt()} km/año)';
+      }
+
       return ResumenAnaliticaVehiculo(
         costoTotal: 0.0,
         costoPorKm: null,
         presupuestoProximoServicio: null,
+        costoAnualEstimado: costoAnualEstimado,
+        esEstimadoSegunUso: true,
+        explicacionCostoAnual: explicacion,
         itemsVencidosOProximos: itemsCriticos,
         porcentajeHistorialVerificado: 0.0,
         totalRegistros: 0,
@@ -108,7 +138,31 @@ class AnaliticaVehiculo {
       costoPorKm = double.parse((totalGasto / vehiculo.kilometrajeActual).toStringAsFixed(3));
     }
 
-    // 3. Presupuesto estimado del próximo servicio
+    // 3. Estimado de costo anual
+    double costoAnualEstimado;
+    bool esEstimadoSegunUso = false;
+    String explicacionCostoAnual;
+
+    final kmAnual = (kmPorDia != null && kmPorDia > 0)
+        ? (kmPorDia * 365.25)
+        : (esSevero ? 15000.0 : 12000.0);
+
+    if (costoPorKm != null && costoPorKm > 0) {
+      costoAnualEstimado = (costoPorKm * kmAnual).roundToDouble();
+      explicacionCostoAnual = kmPorDia != null
+          ? 'proyectado según tus gastos y ritmo de ~${kmPorDia.toStringAsFixed(0)} km/día'
+          : 'proyectado con tus gastos a ~${kmAnual.toInt()} km/año';
+    } else {
+      // Sin costo por km todavía (gastos sin registrar o delta < 500 km)
+      costoAnualEstimado =
+          ((costoAnualBase / kmReferencia) * kmAnual).roundToDouble();
+      esEstimadoSegunUso = true;
+      explicacionCostoAnual = kmPorDia != null
+          ? 'según uso ${esSevero ? 'severo' : 'normal'} y ritmo de ~${kmPorDia.toStringAsFixed(0)} km/día'
+          : 'según uso ${esSevero ? 'severo' : 'normal'} (~${kmReferencia.toInt()} km/año)';
+    }
+
+    // 4. Presupuesto estimado del próximo servicio
     double? presupuestoEstimado;
     int itemsCriticosCount = 0;
 
@@ -149,7 +203,7 @@ class AnaliticaVehiculo {
       }
     }
 
-    // 4. Porcentaje verificado
+    // 5. Porcentaje verificado
     final verificadoTotal = sellados + conEvidencia;
     final pctVerificado = (verificadoTotal / registros.length) * 100.0;
 
@@ -157,6 +211,9 @@ class AnaliticaVehiculo {
       costoTotal: double.parse(totalGasto.toStringAsFixed(2)),
       costoPorKm: costoPorKm,
       presupuestoProximoServicio: presupuestoEstimado,
+      costoAnualEstimado: costoAnualEstimado,
+      esEstimadoSegunUso: esEstimadoSegunUso,
+      explicacionCostoAnual: explicacionCostoAnual,
       itemsVencidosOProximos: itemsCriticosCount,
       porcentajeHistorialVerificado: double.parse(pctVerificado.toStringAsFixed(1)),
       totalRegistros: registros.length,
@@ -165,4 +222,3 @@ class AnaliticaVehiculo {
     );
   }
 }
-

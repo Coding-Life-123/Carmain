@@ -599,6 +599,37 @@ void main() {
       expect(res.presupuestoProximoServicio, 60.0);
       // Delta km = 105000 - 95000 = 10000 km -> $100 / 10000 = $0.01 / km
       expect(res.costoPorKm, 0.01);
+      // Costo anual proyectado con costoPorKm = 0.01 y 12.000 km/año = 120.0
+      expect(res.costoAnualEstimado, 120.0);
+      expect(res.esEstimadoSegunUso, isFalse);
+    });
+
+    test('calcula costo anual estimado segun uso cuando no hay registros', () {
+      final vNormal = _vehiculo(id: 'v-sin-datos').copyWith(
+        tipoUso: TipoUso.normal,
+        kilometrajeActual: 20000,
+      );
+      final resNormal = AnaliticaVehiculo.calcular(
+        vehiculo: vNormal,
+        plan: null,
+        registros: const [],
+      );
+      expect(resNormal.esEstimadoSegunUso, isTrue);
+      expect(resNormal.costoAnualEstimado, 1200000.0);
+      expect(resNormal.explicacionCostoAnual, contains('normal'));
+
+      final vSevero = _vehiculo(id: 'v-severo').copyWith(
+        tipoUso: TipoUso.severo,
+        kilometrajeActual: 20000,
+      );
+      final resSevero = AnaliticaVehiculo.calcular(
+        vehiculo: vSevero,
+        plan: null,
+        registros: const [],
+      );
+      expect(resSevero.esEstimadoSegunUso, isTrue);
+      expect(resSevero.costoAnualEstimado, 1800000.0);
+      expect(resSevero.explicacionCostoAnual, contains('severo'));
     });
   });
 }
