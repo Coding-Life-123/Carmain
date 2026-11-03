@@ -7,6 +7,8 @@ import (
 	"github.com/carmain/servidor-go/biblioteca"
 	"github.com/carmain/servidor-go/relay"
 	"github.com/carmain/servidor-go/seguridad"
+	"github.com/carmain/servidor-go/shared"
+	"github.com/carmain/servidor-go/webmecanico"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,6 +34,21 @@ func nuevoRouter(apiKey string, rl *seguridad.RateLimiter) *gin.Engine {
 
 	h := biblioteca.NewHandler()
 
+	// Rate limiter para endpoints públicos de sesión: 30 peticiones/minuto por IP
+	rlSesion := seguridad.NewRateLimiter(30, time.Minute)
+
+	// Iniciar limpieza periódica de sesiones expiradas
+	shared.Sesiones.IniciarLimpiadorPeriodico(5 * time.Minute)
+
+	// Endpoints públicos de la sesión para la Web del Mecánico (autenticados por el código de sesión o token largo)
+	r.GET("/api/sesion/:codigo", rlSesion.Middleware(), h.ObtenerSesionPublicaHandler)
+	r.POST("/api/sesion/:codigo/propuesta", rlSesion.Middleware(), h.EnviarPropuestaMecanicoHandler)
+
+	// Web del Mecánico (SPA ligera sin registro embebida en el binario)
+	mHandler := webmecanico.Handler()
+	r.GET("/m", mHandler)
+	r.GET("/m/*path", mHandler)
+
 	// Todo lo demás detrás del API key cuando está configurada.
 	protegido := r.Group("/")
 	protegido.Use(seguridad.APIKeyMiddleware(apiKey))
@@ -46,6 +63,8 @@ func nuevoRouter(apiKey string, rl *seguridad.RateLimiter) *gin.Engine {
 		api.GET("/componente", rl.Middleware(), h.ComponenteHandler)
 		api.POST("/sesion", h.CrearSesionHandler)
 		api.DELETE("/sesion/:codigo", h.RevocarSesionHandler)
+		api.GET("/sesion/:codigo/propuestas", h.ObtenerPropuestasPendientesHandler)
+		api.POST("/sesion/:codigo/confirmar", h.ConfirmarPropuestasHandler)
 	}
 	// El WebSocket también: el middleware corre en el handshake HTTP del
 	// upgrade, antes de que relay.Handler valide la sesión.

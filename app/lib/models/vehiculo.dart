@@ -21,6 +21,8 @@ abstract class Vehiculo with _$Vehiculo {
     required int anio,
     String? trim,
     String? vin,
+    String? placa,
+    DateTime? fechaMatricula,
     required Drivetrain drivetrain,
     required Motor motor,
     required Transmision transmision,

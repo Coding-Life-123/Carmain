@@ -5,7 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/vehiculo.dart';
 import '../../providers/providers.dart';
 import '../../services/api_client.dart';
+import '../../utils/formato.dart';
+import '../../widgets/actualizar_km_dialog.dart';
 import '../../widgets/eliminar_vehiculo_dialog.dart';
+import '../../widgets/estado_plan.dart';
+import '../../widgets/vehiculo_avatar.dart';
 import '../crear_vehiculo/crear_vehiculo_screen.dart';
 import '../detalle_vehiculo/detalle_vehiculo_screen.dart';
 
@@ -28,7 +32,14 @@ class DashboardScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CarMain'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.directions_car_rounded, color: colorScheme.secondary),
+            const SizedBox(width: 10),
+            const Text('CarMain'),
+          ],
+        ),
         actions: [
           IconButton(
             icon: conexionAsync.isLoading
@@ -69,6 +80,23 @@ class DashboardScreen extends ConsumerWidget {
               onCrear: () => _navegarCrearVehiculo(context),
             );
           }
+          // Vehículos con mantenimientos vencidos (luego próximos) primero.
+          // `sort` de Dart no es estable, así que el índice original desempata.
+          final urgencia = <String, int>{
+            for (final v in vehiculos)
+              v.id: ResumenPlan.de(
+                ref.watch(planProvider(v.id)).value,
+                v.kilometrajeActual,
+                v.tipoUso,
+              ).peor.index,
+          };
+          final orden = {
+            for (var i = 0; i < vehiculos.length; i++) vehiculos[i].id: i,
+          };
+          vehiculos = [...vehiculos]..sort((a, b) {
+              final c = urgencia[a.id]!.compareTo(urgencia[b.id]!);
+              return c != 0 ? c : orden[a.id]!.compareTo(orden[b.id]!);
+            });
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(vehiculosProvider),
             child: ListView.separated(
@@ -81,6 +109,8 @@ class DashboardScreen extends ConsumerWidget {
                   vehiculo: vehiculo,
                   onTap: () => _navegarDetalle(context, vehiculo.id),
                   onEditar: () => _navegarEditar(context, vehiculo),
+                  onActualizarKm: () =>
+                      actualizarKilometraje(context, ref, vehiculo),
                   onEliminar: () async {
                     final eliminado = await confirmarYEliminarVehiculo(
                         context, ref, vehiculo);
@@ -137,9 +167,6 @@ class DashboardScreen extends ConsumerWidget {
   void _mostrarAjustes(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (ctx) {
         return const _AjustesSheet();
       },
@@ -448,29 +475,37 @@ class _EditarServidorDialogState extends ConsumerState<EditarServidorDialog> {
 enum _EstadoProbe { inactivo, probando, ok, error }
 
 /// Tarjeta individual de un vehículo.
-class _VehiculoCard extends StatelessWidget {
+///
+/// Es un [ConsumerWidget] porque, además de los datos del vehículo, muestra
+/// el estado de su plan (vencidos / próximos / al día): es lo que el dueño
+/// quiere saber de un vistazo, sin entrar al detalle.
+class _VehiculoCard extends ConsumerWidget {
   const _VehiculoCard({
     required this.vehiculo,
     required this.onTap,
     required this.onEditar,
+    required this.onActualizarKm,
     required this.onEliminar,
   });
 
   final Vehiculo vehiculo;
   final VoidCallback onTap;
   final VoidCallback onEditar;
+  final VoidCallback onActualizarKm;
   final VoidCallback onEliminar;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final planAsync = ref.watch(planProvider(vehiculo.id));
+    final resumen = ResumenPlan.de(
+      planAsync.value,
+      vehiculo.kilometrajeActual,
+      vehiculo.tipoUso,
+    );
 
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -493,18 +528,16 @@ class _VehiculoCard extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  // Icono grande del vehículo.
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: colorScheme.onPrimary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Icon(
-                      Icons.directions_car_rounded,
-                      color: colorScheme.onPrimary,
-                      size: 28,
+                  // Visual del vehículo: silueta genérica de fondo + logo de la marca al frente.
+                  Hero(
+                    tag: 'vehiculo-icono-${vehiculo.id}',
+                    child: VehiculoAvatar(
+                      marca: vehiculo.marca,
+                      size: 58,
+                      backgroundColor:
+                          colorScheme.onPrimary.withValues(alpha: 0.15),
+                      colorFondoAuto:
+                          colorScheme.onPrimary.withValues(alpha: 0.28),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -539,39 +572,68 @@ class _VehiculoCard extends StatelessWidget {
                       switch (accion) {
                         case 'editar':
                           onEditar();
+                        case 'km':
+                          onActualizarKm();
                         case 'eliminar':
                           onEliminar();
                       }
                     },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'editar', child: Text('Editar')),
-                      PopupMenuItem(value: 'eliminar', child: Text('Eliminar')),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: 'km',
+                        child: _ItemMenu(
+                            icon: Icons.speed, label: 'Actualizar km'),
+                      ),
+                      PopupMenuItem(
+                        value: 'editar',
+                        child: _ItemMenu(
+                            icon: Icons.edit_outlined, label: 'Editar'),
+                      ),
+                      PopupMenuItem(
+                        value: 'eliminar',
+                        child: _ItemMenu(
+                          icon: Icons.delete_outline,
+                          label: 'Eliminar',
+                          color: colorScheme.error,
+                        ),
+                      ),
                     ],
                   ),
                 ],
               ),
             ),
-            // ── Body: stats y swap en pills ──
+            // Filete dorado: acento de marca entre cabecera y cuerpo.
+            Container(height: 3, color: colorScheme.secondary),
+            // ── Body: estado del plan + stats y swap en pills ──
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _StatPill(
-                    icon: Icons.speed,
-                    label: _formatearKm(vehiculo.kilometrajeActual),
+                  if (resumen.total > 0) ...[
+                    ResumenPlanPills(resumen: resumen),
+                    const SizedBox(height: 12),
+                  ],
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _StatPill(
+                        icon: Icons.speed,
+                        label: formatearKm(vehiculo.kilometrajeActual),
+                      ),
+                      _StatPill(
+                        icon: Icons.settings,
+                        label: vehiculo.drivetrain.label,
+                      ),
+                      _StatPill(
+                        icon: Icons.local_gas_station,
+                        label: vehiculo.motor.codigo,
+                      ),
+                      if (vehiculo.tieneSwap) const _SwapChip(),
+                    ],
                   ),
-                  _StatPill(
-                    icon: Icons.settings,
-                    label: vehiculo.drivetrain.label,
-                  ),
-                  _StatPill(
-                    icon: Icons.local_gas_station,
-                    label: vehiculo.motor.codigo,
-                  ),
-                  if (vehiculo.tieneSwap) _SwapChip(),
                 ],
               ),
             ),
@@ -580,27 +642,34 @@ class _VehiculoCard extends StatelessWidget {
       ),
     );
   }
+}
 
-  /// Formatea un kilometraje con separador de miles (ej: 125000 -> "125,000 km").
-  String _formatearKm(int km) {
-    final grupos = <String>[];
-    var restante = km.abs();
-    if (restante == 0) return '0 km';
-    while (restante > 0) {
-      grupos.insert(0, (restante % 1000).toString().padLeft(3, '0'));
-      restante ~/= 1000;
-    }
-    // El primer grupo no lleva ceros a la izquierda.
-    grupos[0] = int.parse(grupos[0]).toString();
-    final signo = km < 0 ? '-' : '';
-    return '$signo${grupos.join(',')} km';
+/// Fila icono + texto para las entradas del menú de acciones.
+class _ItemMenu extends StatelessWidget {
+  const _ItemMenu({required this.icon, required this.label, this.color});
+
+  final IconData icon;
+  final String label;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: color),
+        const SizedBox(width: 12),
+        Text(label, style: TextStyle(color: color)),
+      ],
+    );
   }
 }
 
-/// Chip rojo que indica que el vehículo tiene componentes swap.
 /// Pill compacto de una estadística del vehículo (km, tracción, motor).
 class _StatPill extends StatelessWidget {
-  const _StatPill({required this.icon, required this.label});
+  const _StatPill({
+    required this.icon,
+    required this.label,
+  });
 
   final IconData icon;
   final String label;
@@ -609,25 +678,28 @@ class _StatPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: colorScheme.onSurfaceVariant),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w500,
+    return Semantics(
+      label: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: colorScheme.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -641,26 +713,29 @@ class _SwapChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: colorScheme.tertiary.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colorScheme.tertiary.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.swap_horiz, size: 14, color: colorScheme.tertiary),
-          const SizedBox(width: 4),
-          Text(
-            'Swap',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: colorScheme.tertiary,
-              fontWeight: FontWeight.w600,
+    return Semantics(
+      label: 'Vehículo con componentes modificados o swap',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: colorScheme.tertiary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: colorScheme.tertiary.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.swap_horiz, size: 14, color: colorScheme.tertiary),
+            const SizedBox(width: 4),
+            Text(
+              'Swap',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.tertiary,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -683,15 +758,23 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.directions_car_rounded,
-              size: 96,
-              color: colorScheme.primary.withValues(alpha: 0.5),
+            Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colorScheme.secondaryContainer.withValues(alpha: 0.6),
+              ),
+              child: Icon(
+                Icons.directions_car_rounded,
+                size: 72,
+                color: colorScheme.secondary,
+              ),
             ),
             const SizedBox(height: 24),
             Text(
               'No tienes vehículos registrados',
-              style: theme.textTheme.titleMedium,
+              style: theme.textTheme.titleLarge,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),

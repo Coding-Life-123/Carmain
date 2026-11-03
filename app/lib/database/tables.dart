@@ -20,6 +20,8 @@ class Vehiculos extends Table {
   IntColumn get tipoUso => integer().withDefault(const Constant(0))();
   TextColumn get notasUso => text().nullable()();
   TextColumn get planMantenimientoId => text().nullable()();
+  TextColumn get placa => text().nullable()();
+  DateTimeColumn get fechaMatricula => dateTime().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
@@ -50,7 +52,9 @@ class RegistrosMantenimiento extends Table {
   IntColumn get kilometraje => integer()();
   TextColumn get itemsRealizadosJson => text().withDefault(const Constant('[]'))();
   RealColumn get costo => real().nullable()();
+  TextColumn get moneda => text().withDefault(const Constant('COP'))();
   TextColumn get taller => text().nullable()();
+  TextColumn get sesionTallerId => text().nullable()();
   TextColumn get notas => text().nullable()();
   TextColumn get evidenciaJson => text().withDefault(const Constant('[]'))();
   DateTimeColumn get updatedAt => dateTime().nullable()();
@@ -63,13 +67,42 @@ class RegistrosMantenimiento extends Table {
 /// Tabla de sesiones de compartido con mecánico.
 @DataClassName('SesionMecanicoRow')
 class SesionesMecanico extends Table {
-  TextColumn get id => text()(); // código/invite de sesión
+  TextColumn get id => text()(); // código/invite corto de sesión (ej: A7F9K2)
+  TextColumn get tokenLargo => text().nullable()(); // token seguro de alta entropía
   TextColumn get vehiculoId => text()();
   TextColumn get duenoDeviceId => text()();
   TextColumn get mecanicoDeviceId => text().nullable()();
   BoolColumn get activa => boolean().withDefault(const Constant(true))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get expiresAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Tabla de lecturas periódicas de kilometraje para proyectar km/día y predicción de desgaste.
+@DataClassName('LecturaKilometrajeRow')
+class LecturasKilometraje extends Table {
+  TextColumn get id => text()();
+  TextColumn get vehiculoId => text()();
+  IntColumn get kilometraje => integer()();
+  DateTimeColumn get fecha => dateTime()();
+  TextColumn get fuente => text()(); // 'creacion' | 'odometro' | 'mantenimiento'
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Tabla de propuestas de servicio recibidas desde la web del mecánico.
+@DataClassName('PropuestaRecibidaRow')
+class PropuestasRecibidas extends Table {
+  TextColumn get id => text()(); // UUID de la propuesta
+  TextColumn get sesionId => text()(); // código o token de sesión
+  TextColumn get vehiculoId => text()();
+  TextColumn get jsonCrudo => text()(); // Payload completo de PropuestaV1 en JSON
+  TextColumn get estado => text().withDefault(const Constant('pendiente'))(); // 'pendiente' | 'aceptada' | 'rechazada'
+  DateTimeColumn get recibidaEn => dateTime()();
+  DateTimeColumn get procesadaEn => dateTime().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

@@ -232,3 +232,32 @@ func Handler(c *gin.Context) {
 		}
 	}
 }
+
+// NotificarDueno envía un mensaje directo al dueño si se encuentra conectado al relay WebSocket.
+func NotificarDueno(codigo, tipo string, payload map[string]interface{}) bool {
+	sesion, ok := shared.Sesiones.Validar(codigo)
+	if !ok || sesion.DuenoDeviceID == "" {
+		return false
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return false
+	}
+
+	msg := shared.MensajeRelay{
+		Tipo:      tipo,
+		De:        "buzon_mecanico",
+		Para:      sesion.DuenoDeviceID,
+		SesionID:  codigo,
+		Payload:   payloadBytes,
+		Timestamp: time.Now().UnixMilli(),
+	}
+
+	msgBytes, err := json.Marshal(msg)
+	if err != nil {
+		return false
+	}
+
+	return hubGlobal.rutear(codigo, sesion.DuenoDeviceID, msgBytes)
+}

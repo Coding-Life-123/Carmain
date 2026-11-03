@@ -103,7 +103,9 @@ class RelayMessage {
       de: json['de'] as String,
       para: json['para'] as String,
       sesionId: json['sesionId'] as String,
-      payload: (json['payload'] as List).cast<int>(),
+      payload: json['payload'] is String
+          ? base64Decode(json['payload'] as String)
+          : (json['payload'] as List).cast<int>(),
       timestamp: json['timestamp'] as int,
     );
   }
@@ -113,7 +115,7 @@ class RelayMessage {
         'de': de,
         'para': para,
         'sesionId': sesionId,
-        'payload': payload,
+        'payload': base64Encode(payload),
         'timestamp': timestamp,
       };
 }

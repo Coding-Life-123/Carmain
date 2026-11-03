@@ -116,3 +116,48 @@ enum TipoRecordatorio {
   const TipoRecordatorio(this.label);
   final String label;
 }
+
+/// Severidad de un punto crítico o cuello de botella detectado en swaps.
+enum SeveridadIngenieria {
+  @JsonValue('alta')
+  alta('Riesgo Mecánico Alto'),
+  @JsonValue('media')
+  media('Atención Térmica / Fluidos'),
+  @JsonValue('recomendacion')
+  recomendacion('Mejora Recomendada');
+
+  const SeveridadIngenieria(this.label);
+  final String label;
+}
+
+/// Vector cinemático o térmico de estrés en un swap.
+enum VectorEstresSwap {
+  @JsonValue('torqueDiferencial')
+  torqueDiferencial('Diferencial y Semiejes'),
+  @JsonValue('limiteTransmision')
+  limiteTransmision('Transmisión y Embrague'),
+  @JsonValue('disipacionTermica')
+  disipacionTermica('Disipación Térmica'),
+  @JsonValue('frenadoMasa')
+  frenadoMasa('Frenos y Masa Frontal'),
+  @JsonValue('alimentacionCombustible')
+  alimentacionCombustible('Alimentación de Combustible'),
+  @JsonValue('soportesNvh')
+  soportesNvh('Soportes y Subchasis');
+
+  const VectorEstresSwap(this.label);
+  final String label;
+}
+
+/// Nivel de confianza o verificación de un registro de mantenimiento en el pasaporte digital.
+enum NivelVerificacionHistorial {
+  @JsonValue('declarado')
+  declarado('Nivel 1 · Declarado por usuario'),
+  @JsonValue('conEvidencia')
+  conEvidencia('Nivel 2 · Documentado con evidencia'),
+  @JsonValue('selladoTaller')
+  selladoTaller('Nivel 3 · Sellado por taller');
+
+  const NivelVerificacionHistorial(this.label);
+  final String label;
+}

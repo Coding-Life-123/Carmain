@@ -1,0 +1,17 @@
+{
+  "name": "web-mecanico",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "node --experimental-strip-types test_vectores.ts",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}
+

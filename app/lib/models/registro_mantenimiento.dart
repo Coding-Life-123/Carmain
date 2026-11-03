@@ -9,6 +9,7 @@ part 'registro_mantenimiento.g.dart';
 @freezed
 abstract class ItemRealizado with _$ItemRealizado {
   const factory ItemRealizado({
+    String? itemId,
     required CategoriaMantenimiento categoria,
     required String descripcion,
     required TipoComponente componenteAplica,
@@ -21,6 +22,8 @@ abstract class ItemRealizado with _$ItemRealizado {
 /// Registro de un mantenimiento realizado (lo que ya se hizo).
 @freezed
 abstract class RegistroMantenimiento with _$RegistroMantenimiento {
+  const RegistroMantenimiento._();
+
   const factory RegistroMantenimiento({
     required String id,
     required String vehiculoId,
@@ -28,7 +31,9 @@ abstract class RegistroMantenimiento with _$RegistroMantenimiento {
     required int kilometraje,
     @Default([]) List<ItemRealizado> itemsRealizados,
     double? costo,
+    @Default('COP') String moneda,
     String? taller,
+    String? sesionTallerId,
     String? notas,
     @Default([]) List<String> evidencia, // rutas a fotos/facturas
     // Para sincronización dueño ↔ mecánico.
@@ -37,4 +42,15 @@ abstract class RegistroMantenimiento with _$RegistroMantenimiento {
 
   factory RegistroMantenimiento.fromJson(Map<String, dynamic> json) =>
       _$RegistroMantenimientoFromJson(json);
+
+  /// Nivel de confianza o verificación del registro para el Pasaporte Digital.
+  NivelVerificacionHistorial get nivelVerificacion {
+    if (sesionTallerId != null && sesionTallerId!.isNotEmpty) {
+      return NivelVerificacionHistorial.selladoTaller;
+    }
+    if (evidencia.isNotEmpty) {
+      return NivelVerificacionHistorial.conEvidencia;
+    }
+    return NivelVerificacionHistorial.declarado;
+  }
 }

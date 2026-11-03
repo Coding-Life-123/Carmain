@@ -12,6 +12,7 @@ import '../models/registro_mantenimiento.dart';
 import '../models/vehiculo.dart';
 import '../services/api_client.dart';
 import '../services/api_config.dart';
+import '../utils/analitica_vehiculo.dart';
 
 // ─────────────────────────── Infraestructura ───────────────────────────
 
@@ -226,6 +227,41 @@ final registrosProvider =
   return ref.watch(repositoryProvider).getRegistros(vehiculoId);
 });
 
+/// Ritmo diario de kilometraje (km/día) calculado para un vehículo.
+final kmPorDiaProvider =
+    FutureProvider.family<double?, String>((ref, vehiculoId) async {
+  return ref.watch(repositoryProvider).calcularKmPorDia(vehiculoId);
+});
+
+/// Resumen analítico financiero y de verificación del vehículo.
+final analiticaVehiculoProvider =
+    FutureProvider.family<ResumenAnaliticaVehiculo, String>(
+        (ref, vehiculoId) async {
+  final vehiculo = await ref.watch(vehiculoProvider(vehiculoId).future);
+  if (vehiculo == null) {
+    return const ResumenAnaliticaVehiculo(
+      costoTotal: 0.0,
+      costoPorKm: null,
+      presupuestoProximoServicio: null,
+      itemsVencidosOProximos: 0,
+      porcentajeHistorialVerificado: 0.0,
+      totalRegistros: 0,
+      registrosSelladosTaller: 0,
+      registrosConEvidencia: 0,
+    );
+  }
+  final plan = await ref.watch(planProvider(vehiculoId).future);
+  final registros = await ref.watch(registrosProvider(vehiculoId).future);
+  final kmPorDia = await ref.watch(kmPorDiaProvider(vehiculoId).future);
+
+  return AnaliticaVehiculo.calcular(
+    vehiculo: vehiculo,
+    plan: plan,
+    registros: registros,
+    kmPorDia: kmPorDia,
+  );
+});
+
 // ─────────────────────────── Acciones ───────────────────────────
 
 /// Crea un vehículo nuevo y solicita su plan al backend.
@@ -236,7 +272,8 @@ final registrosProvider =
 /// escritura completa hasta 10 veces (cada reintento genera además un
 /// plan con UUID nuevo — filas huérfanas si falla a mitad).
 final crearVehiculoProvider =
-    FutureProvider.family<Vehiculo, Vehiculo>((ref, vehiculo) async {
+    FutureProvider.family<Vehiculo, (Vehiculo, bool)>((ref, args) async {
+  final (vehiculo, inicializarAlDia) = args;
   final repo = ref.watch(repositoryProvider);
   final api = ref.watch(apiClientProvider);
 
@@ -253,6 +290,31 @@ final crearVehiculoProvider =
 
   // 3. Fallback: Si el backend no está disponible o no respondió, usar plan base local.
   plan ??= _generarPlanBaseLocal(vehiculo);
+
+  // Si el vehículo es 0 km nuevo, todos los ítems arrancan desde 0 km
+  if (vehiculo.kilometrajeActual == 0) {
+    final ahora = DateTime.now();
+    final itemsCeroKm = plan.items.map((item) {
+      return item.copyWith(
+        ultimaVezKm: 0,
+        ultimaVezFecha: ahora,
+      );
+    }).toList();
+    plan = plan.copyWith(items: itemsCeroKm);
+  } else if (inicializarAlDia && vehiculo.kilometrajeActual > 0) {
+    // Si el usuario explícitamente marcó todo al día:
+    final ahora = DateTime.now();
+    final itemsInicializados = plan.items.map((item) {
+      if (item.ultimaVezKm == null) {
+        return item.copyWith(
+          ultimaVezKm: vehiculo.kilometrajeActual,
+          ultimaVezFecha: ahora,
+        );
+      }
+      return item;
+    }).toList();
+    plan = plan.copyWith(items: itemsInicializados);
+  }
 
   // replacePlan (no savePlan): un reintento tras error generaría otro plan
   // con UUID nuevo y dejaría dos filas para el mismo vehiculoId.
@@ -282,6 +344,11 @@ final actualizarVehiculoProvider =
   final repo = ref.watch(repositoryProvider);
   final api = ref.watch(apiClientProvider);
 
+  // Si cambia la config técnica, obtener el plan y vehículo anteriores antes de sobrescribir
+  final vehiculoAnterior = await repo.getVehiculo(vehiculo.id);
+  final planAnterior =
+      vehiculoAnterior != null ? await repo.getPlan(vehiculo.id) : null;
+
   // 1. Persistir el vehículo (upsert por id).
   await repo.saveVehiculo(vehiculo);
 
@@ -295,6 +362,16 @@ final actualizarVehiculoProvider =
           '[actualizarVehiculoProvider] Backend no disponible ($e). Generando plan base local.');
     }
     plan ??= _generarPlanBaseLocal(vehiculo);
+
+    // Migrar progreso del plan anterior para componentes que no cambiaron
+    if (planAnterior != null && vehiculoAnterior != null) {
+      plan = repo.migrarProgresoPlan(
+        planAnterior,
+        plan,
+        vehiculoAnterior: vehiculoAnterior,
+        vehiculoNuevo: vehiculo,
+      );
+    }
 
     // replacePlan (no savePlan): el plan regenerado trae id nuevo — sin el
     // reemplazo quedarían dos planes para el vehiculoId y getPlan lanzaría
@@ -318,6 +395,19 @@ final eliminarVehiculoProvider =
   ref.invalidate(vehiculoProvider(id));
   ref.invalidate(planProvider(id));
   ref.invalidate(registrosProvider(id));
+  ref.invalidate(kmPorDiaProvider(id));
+  ref.invalidate(analiticaVehiculoProvider(id));
+}, retry: (_, _) => null);
+
+/// Elimina un registro de mantenimiento y recalcula el progreso del plan.
+final eliminarRegistroProvider = FutureProvider.family<void,
+    ({String registroId, String vehiculoId})>((ref, args) async {
+  await ref.watch(repositoryProvider).deleteRegistro(args.registroId);
+  ref.invalidate(planProvider(args.vehiculoId));
+  ref.invalidate(registrosProvider(args.vehiculoId));
+  ref.invalidate(kmPorDiaProvider(args.vehiculoId));
+  ref.invalidate(analiticaVehiculoProvider(args.vehiculoId));
+  ref.invalidate(vehiculosProvider);
 }, retry: (_, _) => null);
 
 // ─────────────────────────── Búsqueda por código ───────────────────────────
@@ -360,89 +450,208 @@ final infoCodigoTransmisionProvider =
 
 PlanMantenimiento _generarPlanBaseLocal(Vehiculo vehiculo) {
   final planId = const Uuid().v4();
+  final tieneSwap = !vehiculo.motor.esOriginal || !vehiculo.transmision.esOriginal;
+  final kmTransmision = tieneSwap ? 25000 : 40000;
+  final mesesTransmision = tieneSwap ? 12 : 24;
+
+  final items = <ItemMantenimiento>[
+    ItemMantenimiento(
+      id: const Uuid().v4(),
+      categoria: CategoriaMantenimiento.motor,
+      descripcion: 'Cambio de aceite de motor y filtro',
+      componenteAplica: TipoComponente.motor,
+      intervaloKm: 7500,
+      intervaloMeses: 6,
+      intervaloSeveroKm: 5000,
+      fuente: FuentePlan.iaInferida,
+      confianza: NivelConfianza.baja,
+    ),
+    ItemMantenimiento(
+      id: const Uuid().v4(),
+      categoria: CategoriaMantenimiento.motor,
+      descripcion: 'Cambio de filtro de aire de motor',
+      componenteAplica: TipoComponente.motor,
+      intervaloKm: 15000,
+      intervaloMeses: 12,
+      intervaloSeveroKm: 10000,
+      fuente: FuentePlan.iaInferida,
+      confianza: NivelConfianza.baja,
+    ),
+    ItemMantenimiento(
+      id: const Uuid().v4(),
+      categoria: CategoriaMantenimiento.frenos,
+      descripcion: 'Inspección de pastillas y discos de freno',
+      componenteAplica: TipoComponente.frenos,
+      intervaloKm: 10000,
+      intervaloMeses: 6,
+      intervaloSeveroKm: 7500,
+      fuente: FuentePlan.iaInferida,
+      confianza: NivelConfianza.baja,
+    ),
+    ItemMantenimiento(
+      id: const Uuid().v4(),
+      categoria: CategoriaMantenimiento.frenos,
+      descripcion: 'Cambio de líquido de frenos',
+      componenteAplica: TipoComponente.frenos,
+      intervaloKm: 30000,
+      intervaloMeses: 24,
+      intervaloSeveroKm: 20000,
+      fuente: FuentePlan.iaInferida,
+      confianza: NivelConfianza.baja,
+    ),
+    ItemMantenimiento(
+      id: const Uuid().v4(),
+      categoria: CategoriaMantenimiento.refrigeracion,
+      descripcion: 'Inspección y purga de refrigerante',
+      componenteAplica: TipoComponente.motor,
+      intervaloKm: 40000,
+      intervaloMeses: 24,
+      intervaloSeveroKm: 30000,
+      fuente: FuentePlan.iaInferida,
+      confianza: NivelConfianza.baja,
+    ),
+    ItemMantenimiento(
+      id: const Uuid().v4(),
+      categoria: CategoriaMantenimiento.transmision,
+      descripcion: tieneSwap
+          ? 'Cambio de fluido de transmisión (sintético extrema presión)'
+          : 'Inspección de aceite de transmisión',
+      componenteAplica: TipoComponente.transmision,
+      intervaloKm: kmTransmision,
+      intervaloMeses: mesesTransmision,
+      intervaloSeveroKm: tieneSwap ? 15000 : 25000,
+      fuente: FuentePlan.iaInferida,
+      confianza: NivelConfianza.baja,
+    ),
+    ItemMantenimiento(
+      id: const Uuid().v4(),
+      categoria: CategoriaMantenimiento.motor,
+      descripcion: 'Cambio de bujías de encendido',
+      componenteAplica: TipoComponente.motor,
+      intervaloKm: 40000,
+      intervaloMeses: 24,
+      intervaloSeveroKm: 25000,
+      fuente: FuentePlan.iaInferida,
+      confianza: NivelConfianza.baja,
+    ),
+  ];
+
+  if (vehiculo.drivetrain == Drivetrain.rwd ||
+      vehiculo.drivetrain == Drivetrain.awd ||
+      vehiculo.drivetrain == Drivetrain.fourWd ||
+      tieneSwap) {
+    items.add(ItemMantenimiento(
+      id: const Uuid().v4(),
+      categoria: CategoriaMantenimiento.diferencial,
+      descripcion: 'Cambio de fluido de diferencial (LSD / extrema presión)',
+      componenteAplica: TipoComponente.diferencial,
+      intervaloKm: tieneSwap ? 25000 : 50000,
+      intervaloMeses: tieneSwap ? 12 : 24,
+      fuente: FuentePlan.iaInferida,
+      confianza: NivelConfianza.baja,
+    ));
+  }
+
+  final alertas = <AlertaIngenieria>[];
+  if (tieneSwap) {
+    items.addAll([
+      ItemMantenimiento(
+        id: const Uuid().v4(),
+        categoria: CategoriaMantenimiento.transmision,
+        descripcion:
+            'Inspección de tapón magnético en transmisión y diferencial (búsqueda de virutas)',
+        componenteAplica: TipoComponente.transmision,
+        intervaloKm: 15000,
+        intervaloMeses: 12,
+        esVigilanciaSwap: true,
+        fuente: FuentePlan.iaInferida,
+        confianza: NivelConfianza.alta,
+      ),
+      ItemMantenimiento(
+        id: const Uuid().v4(),
+        categoria: CategoriaMantenimiento.inspeccion,
+        descripcion:
+            'Re-torqueo de soportes de motor, transmisión, cardán y subchasis',
+        componenteAplica: TipoComponente.otro,
+        intervaloKm: 10000,
+        intervaloMeses: 6,
+        esVigilanciaSwap: true,
+        fuente: FuentePlan.iaInferida,
+        confianza: NivelConfianza.alta,
+      ),
+      ItemMantenimiento(
+        id: const Uuid().v4(),
+        categoria: CategoriaMantenimiento.suspension,
+        descripcion:
+            'Inspección de juntas homocinéticas, crucetas y bujes de tren trasero',
+        componenteAplica: TipoComponente.diferencial,
+        intervaloKm: 15000,
+        intervaloMeses: 12,
+        esVigilanciaSwap: true,
+        fuente: FuentePlan.iaInferida,
+        confianza: NivelConfianza.alta,
+      ),
+    ]);
+
+    final aspiracion = vehiculo.motor.aspiracion?.toLowerCase() ?? '';
+    if (aspiracion.contains('turbo') || aspiracion.contains('supercharger')) {
+      items.add(ItemMantenimiento(
+        id: const Uuid().v4(),
+        categoria: CategoriaMantenimiento.inspeccion,
+        descripcion:
+            'Inspección de mangueras de intercooler, abrazaderas y líneas de combustible',
+        componenteAplica: TipoComponente.motor,
+        intervaloKm: 10000,
+        intervaloMeses: 6,
+        esVigilanciaSwap: true,
+        fuente: FuentePlan.iaInferida,
+        confianza: NivelConfianza.alta,
+      ));
+    }
+
+    alertas.addAll([
+      AlertaIngenieria(
+        id: const Uuid().v4(),
+        vector: VectorEstresSwap.torqueDiferencial,
+        severidad: SeveridadIngenieria.alta,
+        componenteAfectado: 'Diferencial y Semiejes',
+        titulo: 'Sobrecarga de par torsional sobre diferencial original',
+        diagnostico:
+            'El incremento de torque del motor actual somete a esfuerzo severo los semiejes y la relación piñón-corona diseñados para el motor OEM.',
+        recomendacionUpgrade:
+            'Inspeccionar limalla en tapón magnético y evaluar upgrade a diferencial LSD reforzado.',
+      ),
+      AlertaIngenieria(
+        id: const Uuid().v4(),
+        vector: VectorEstresSwap.soportesNvh,
+        severidad: SeveridadIngenieria.media,
+        componenteAfectado: 'Soportes de motor y subchasis',
+        titulo: 'Fatiga en soportes adaptadores y bujes',
+        diagnostico:
+            'Las patas de motor adaptadas transmiten mayor vibración y torsión al subchasis delantero.',
+        recomendacionUpgrade:
+            'Re-torqueo periódico y uso de bujes de poliuretano de dureza intermedia.',
+      ),
+      AlertaIngenieria(
+        id: const Uuid().v4(),
+        vector: VectorEstresSwap.disipacionTermica,
+        severidad: SeveridadIngenieria.media,
+        componenteAfectado: 'Sistema de Refrigeración',
+        titulo: 'Disipación térmica en vano motor',
+        diagnostico:
+            'Mayor densidad de potencia requiere controlar picos de temperatura en aceite y refrigerante.',
+        recomendacionUpgrade:
+            'Radiador de aluminio de mayor capacidad y líquido refrigerante de alto rendimiento.',
+      ),
+    ]);
+  }
+
   return PlanMantenimiento(
     id: planId,
     vehiculoId: vehiculo.id,
     version: 1,
     fechaGeneracion: DateTime.now(),
-    items: [
-      ItemMantenimiento(
-        id: const Uuid().v4(),
-        categoria: CategoriaMantenimiento.motor,
-        descripcion: 'Cambio de aceite de motor y filtro',
-        componenteAplica: TipoComponente.motor,
-        intervaloKm: 7500,
-        intervaloMeses: 6,
-        intervaloSeveroKm: 5000,
-        fuente: FuentePlan.oem,
-        confianza: NivelConfianza.alta,
-      ),
-      ItemMantenimiento(
-        id: const Uuid().v4(),
-        categoria: CategoriaMantenimiento.motor,
-        descripcion: 'Cambio de filtro de aire de motor',
-        componenteAplica: TipoComponente.motor,
-        intervaloKm: 15000,
-        intervaloMeses: 12,
-        intervaloSeveroKm: 10000,
-        fuente: FuentePlan.oem,
-        confianza: NivelConfianza.alta,
-      ),
-      ItemMantenimiento(
-        id: const Uuid().v4(),
-        categoria: CategoriaMantenimiento.frenos,
-        descripcion: 'Inspección de pastillas y discos de freno',
-        componenteAplica: TipoComponente.frenos,
-        intervaloKm: 10000,
-        intervaloMeses: 6,
-        intervaloSeveroKm: 7500,
-        fuente: FuentePlan.oem,
-        confianza: NivelConfianza.alta,
-      ),
-      ItemMantenimiento(
-        id: const Uuid().v4(),
-        categoria: CategoriaMantenimiento.frenos,
-        descripcion: 'Cambio de líquido de frenos',
-        componenteAplica: TipoComponente.frenos,
-        intervaloKm: 30000,
-        intervaloMeses: 24,
-        intervaloSeveroKm: 20000,
-        fuente: FuentePlan.oem,
-        confianza: NivelConfianza.media,
-      ),
-      ItemMantenimiento(
-        id: const Uuid().v4(),
-        categoria: CategoriaMantenimiento.refrigeracion,
-        descripcion: 'Inspección y purga de refrigerante',
-        componenteAplica: TipoComponente.motor,
-        intervaloKm: 40000,
-        intervaloMeses: 24,
-        intervaloSeveroKm: 30000,
-        fuente: FuentePlan.oem,
-        confianza: NivelConfianza.media,
-      ),
-      ItemMantenimiento(
-        id: const Uuid().v4(),
-        categoria: CategoriaMantenimiento.transmision,
-        descripcion: 'Inspección de aceite de transmisión',
-        componenteAplica: TipoComponente.transmision,
-        intervaloKm: 40000,
-        intervaloMeses: 24,
-        intervaloSeveroKm: 25000,
-        fuente: FuentePlan.oem,
-        confianza: NivelConfianza.media,
-      ),
-      ItemMantenimiento(
-        id: const Uuid().v4(),
-        categoria: CategoriaMantenimiento.motor,
-        descripcion: 'Cambio de bujías de encendido',
-        componenteAplica: TipoComponente.motor,
-        intervaloKm: 40000,
-        intervaloMeses: 24,
-        intervaloSeveroKm: 25000,
-        fuente: FuentePlan.oem,
-        confianza: NivelConfianza.media,
-      ),
-    ],
+    items: items,
+    alertasIngenieria: alertas,
   );
 }

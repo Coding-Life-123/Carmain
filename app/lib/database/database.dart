@@ -18,6 +18,8 @@ part 'database.g.dart';
   PlanesMantenimiento,
   RegistrosMantenimiento,
   SesionesMecanico,
+  LecturasKilometraje,
+  PropuestasRecibidas,
 ])
 class AppDatabase extends _$AppDatabase {
   /// [executor] permite inyectar una conexión distinta — en tests, una
@@ -26,7 +28,29 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 4;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.createTable(lecturasKilometraje);
+            await m.addColumn(
+                registrosMantenimiento, registrosMantenimiento.sesionTallerId);
+          }
+          if (from < 3) {
+            await m.addColumn(vehiculos, vehiculos.placa);
+            await m.addColumn(vehiculos, vehiculos.fechaMatricula);
+            await m.addColumn(
+                registrosMantenimiento, registrosMantenimiento.moneda);
+          }
+          if (from < 4) {
+            await m.createTable(propuestasRecibidas);
+            await m.addColumn(sesionesMecanico, sesionesMecanico.tokenLargo);
+          }
+        },
+      );
 }
 
 LazyDatabase _openConnection() {

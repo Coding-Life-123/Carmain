@@ -10,6 +10,7 @@ import '../../models/enums.dart';
 import '../../models/motorizacion.dart';
 import '../../models/vehiculo.dart';
 import '../../providers/providers.dart';
+import '../../utils/formato.dart';
 
 /// Pantalla "Crear Vehículo".
 ///
@@ -40,6 +41,8 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
   final _anioController = TextEditingController();
   final _trimController = TextEditingController();
   final _vinController = TextEditingController();
+  final _placaController = TextEditingController();
+  DateTime? _fechaMatricula;
 
   final _motorCodigoController = TextEditingController();
   final _cilindradaController = TextEditingController();
@@ -58,6 +61,13 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
   TipoCombustible _tipoCombustible = TipoCombustible.gasolina;
   TipoTransmision _tipoTransmision = TipoTransmision.manual;
   bool _usoSevero = false;
+  bool _mantenimientoAlDia = false;
+
+  // Swaps y componentes
+  bool _motorEsSwap = false;
+  String? _motorOriginalCodigo;
+  bool _transEsSwap = false;
+  String? _transOriginalCodigo;
 
   bool _guardando = false;
 
@@ -110,6 +120,8 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
       _anioController.text = v.anio.toString();
       _trimController.text = v.trim ?? '';
       _vinController.text = v.vin ?? '';
+      _placaController.text = v.placa ?? '';
+      _fechaMatricula = v.fechaMatricula;
       _motorCodigoController.text = v.motor.codigo;
       _cilindradaController.text = v.motor.cilindrada?.toString() ?? '';
       _cilindrosController.text = v.motor.cilindros?.toString() ?? '';
@@ -124,6 +136,10 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
       _tipoCombustible = v.motor.tipoCombustible;
       _tipoTransmision = v.transmision.tipo;
       _usoSevero = v.tipoUso == TipoUso.severo;
+      _motorEsSwap = !v.motor.esOriginal;
+      _motorOriginalCodigo = v.motor.originalCodigo;
+      _transEsSwap = !v.transmision.esOriginal;
+      _transOriginalCodigo = v.transmision.originalCodigo;
       _motorTocado = true;
       _transTocado = true;
       _motorDeSugerencia = false; // datos guardados = intención del usuario
@@ -158,6 +174,7 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
     _anioController.dispose();
     _trimController.dispose();
     _vinController.dispose();
+    _placaController.dispose();
     _motorCodigoController.dispose();
     _cilindradaController.dispose();
     _cilindrosController.dispose();
@@ -239,9 +256,69 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
     }
   }
 
+  String _normalizarCodigo(String s) =>
+      s.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
+
+  bool _esCodigoOem(String codigo, List<String> codigosOem) {
+    final norm = _normalizarCodigo(codigo);
+    if (norm.isEmpty) return true;
+    return codigosOem.any((oem) => _normalizarCodigo(oem) == norm);
+  }
+
+  void _evaluarSwapsAutomaticos([SugerenciasMotorizacion? sugerencias]) {
+    final sugs = sugerencias ??
+        (_claveBusqueda != null
+            ? ref.read(motorizacionBusquedaProvider(_claveBusqueda!)).value
+            : null);
+
+    final existente = widget.vehiculoExistente;
+    if (sugs != null) {
+      if (sugs.motores.isNotEmpty) {
+        final codigosOem = sugs.motores.map((m) => m.codigo).toList();
+        _motorOriginalCodigo ??= codigosOem.first;
+        final motorActual = _motorCodigoController.text.trim();
+        if (motorActual.isNotEmpty) {
+          _motorEsSwap = !_esCodigoOem(motorActual, codigosOem);
+        }
+      }
+      if (sugs.transmisiones.isNotEmpty) {
+        final codigosOem = sugs.transmisiones.map((t) => t.codigo).toList();
+        _transOriginalCodigo ??= codigosOem.first;
+        final transActual = _transmisionCodigoController.text.trim();
+        if (transActual.isNotEmpty) {
+          _transEsSwap = !_esCodigoOem(transActual, codigosOem);
+        }
+      }
+    } else if (existente != null) {
+      final motorActual = _motorCodigoController.text.trim();
+      final motorOemRef = existente.motor.esOriginal
+          ? existente.motor.codigo
+          : existente.motor.originalCodigo;
+      if (motorOemRef != null && motorActual.isNotEmpty) {
+        _motorOriginalCodigo ??= motorOemRef;
+        _motorEsSwap = !_esCodigoOem(motorActual, [motorOemRef]);
+      }
+
+      final transActual = _transmisionCodigoController.text.trim();
+      final transOemRef = existente.transmision.esOriginal
+          ? existente.transmision.codigo
+          : existente.transmision.originalCodigo;
+      if (transOemRef != null && transActual.isNotEmpty) {
+        _transOriginalCodigo ??= transOemRef;
+        _transEsSwap = !_esCodigoOem(transActual, [transOemRef]);
+      }
+    }
+  }
+
   /// Auto-rellena motor, transmisión y tracción con las sugerencias —
   /// solo lo que el usuario no haya tocado (nunca pisar su elección).
   void _aplicarSugerencias(SugerenciasMotorizacion sugerencias) {
+    if (sugerencias.motores.isNotEmpty && _motorOriginalCodigo == null) {
+      _motorOriginalCodigo = sugerencias.motores.first.codigo;
+    }
+    if (sugerencias.transmisiones.isNotEmpty && _transOriginalCodigo == null) {
+      _transOriginalCodigo = sugerencias.transmisiones.first.codigo;
+    }
     if (!_motorTocado && sugerencias.motores.isNotEmpty) {
       _llenarMotor(sugerencias.motores.first);
     }
@@ -251,6 +328,7 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
     if (!_drivetrainTocado && sugerencias.drivetrain != null) {
       setState(() => _drivetrain = sugerencias.drivetrain!);
     }
+    _evaluarSwapsAutomaticos(sugerencias);
   }
 
   /// Descripción para el helperText del campo de código — null si no hay
@@ -279,6 +357,8 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
     if (escribirCodigo) {
       _motorCodigoController.text = op.codigo;
       _motorDeSugerencia = true; // el código vino de las sugerencias
+      _motorEsSwap = false;
+      _motorOriginalCodigo = op.codigo;
       // El código buscado a mano ya no está en pantalla: descartar su
       // respuesta en vuelo (y su helperText) para que no pise esta
       // elección cuando llegue.
@@ -307,6 +387,8 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
     if (escribirCodigo) {
       _transmisionCodigoController.text = op.codigo;
       _transDeSugerencia = true; // el código vino de las sugerencias
+      _transEsSwap = false;
+      _transOriginalCodigo = op.codigo;
       // Ídem motor: descartar la búsqueda por código en vuelo.
       _claveInfoTrans = null;
       _infoTransActual = null;
@@ -367,6 +449,9 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
       torqueNm: _torqueController.text.trim().isEmpty
           ? null
           : int.tryParse(_torqueController.text.trim()),
+      esOriginal: !_motorEsSwap,
+      originalCodigo: _motorEsSwap ? _motorOriginalCodigo : null,
+      fuente: _motorEsSwap ? FuenteComponente.swap : FuenteComponente.oem,
     );
     Transmision transmision = Transmision(
       codigo: _transmisionCodigoController.text.trim(),
@@ -374,21 +459,18 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
       marchas: _marchasController.text.trim().isEmpty
           ? null
           : int.tryParse(_marchasController.text.trim()),
+      esOriginal: !_transEsSwap,
+      originalCodigo: _transEsSwap ? _transOriginalCodigo : null,
+      fuente: _transEsSwap ? FuenteComponente.swap : FuenteComponente.oem,
     );
     if (existente != null) {
       motor = motor.copyWith(
         descripcion: existente.motor.descripcion,
         fabricante: existente.motor.fabricante,
-        esOriginal: existente.motor.esOriginal,
-        originalCodigo: existente.motor.originalCodigo,
-        fuente: existente.motor.fuente,
       );
       transmision = transmision.copyWith(
         descripcion: existente.transmision.descripcion,
         fabricante: existente.transmision.fabricante,
-        esOriginal: existente.transmision.esOriginal,
-        originalCodigo: existente.transmision.originalCodigo,
-        fuente: existente.transmision.fuente,
       );
     }
 
@@ -404,6 +486,10 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
       vin: _vinController.text.trim().isEmpty
           ? null
           : _vinController.text.trim(),
+      placa: _placaController.text.trim().isEmpty
+          ? null
+          : _placaController.text.trim().toUpperCase(),
+      fechaMatricula: _fechaMatricula,
       drivetrain: _drivetrain,
       motor: motor,
       transmision: transmision,
@@ -433,8 +519,8 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
       // autoDispose y un miembro del family que ya quedó en error (o ya
       // completó) devolvería el mismo futuro — reintentar debe re-ejecutar.
       if (existente == null) {
-        ref.invalidate(crearVehiculoProvider(vehiculo));
-        await ref.read(crearVehiculoProvider(vehiculo).future);
+        ref.invalidate(crearVehiculoProvider((vehiculo, _mantenimientoAlDia)));
+        await ref.read(crearVehiculoProvider((vehiculo, _mantenimientoAlDia)).future);
       } else {
         ref.invalidate(actualizarVehiculoProvider((vehiculo, configCambio)));
         await ref
@@ -523,452 +609,656 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
         title: Text(esEdicion ? 'Editar Vehículo' : 'Crear Vehículo'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ─── Identidad del chasis ───
-              _SectionTitle('Identidad del chasis'),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _marcaController,
-                decoration: const InputDecoration(
-                  labelText: 'Marca *',
-                  hintText: 'ej. Toyota',
-                  border: OutlineInputBorder(),
-                ),
-                textCapitalization: TextCapitalization.words,
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Obligatorio' : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _modeloController,
-                decoration: const InputDecoration(
-                  labelText: 'Modelo *',
-                  hintText: 'ej. Supra',
-                  border: OutlineInputBorder(),
-                ),
-                textCapitalization: TextCapitalization.words,
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Obligatorio' : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _anioController,
-                decoration: const InputDecoration(
-                  labelText: 'Año *',
-                  hintText: 'ej. 1995',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) return 'Obligatorio';
-                  final anio = int.tryParse(v.trim());
-                  if (anio == null) return 'Año inválido';
-                  if (anio < 1900 || anio > 2100) return 'Año fuera de rango';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _trimController,
-                decoration: const InputDecoration(
-                  labelText: 'Trim (opcional)',
-                  hintText: 'ej. GR',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _vinController,
-                decoration: const InputDecoration(
-                  labelText: 'VIN (opcional)',
-                  hintText: '17 caracteres',
-                  border: OutlineInputBorder(),
-                ),
-                textCapitalization: TextCapitalization.characters,
-              ),
-
-              // Estado de la búsqueda de motorizaciones — visible desde que
-              // el chasis es buscable: buscando, sin conexión o sin
-              // resultados. Con resultados, los chips bajo cada campo hacen
-              // el resto y acá no hace falta decir nada.
-              if (sugerenciasAsync != null) ...[
-                const SizedBox(height: 12),
-                if (sugerenciasAsync.isLoading)
-                  const Row(
-                    children: [
-                      SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      SizedBox(width: 10),
-                      Text('Buscando motorizaciones…',
-                          style: TextStyle(fontSize: 12)),
-                    ],
-                  )
-                else if (sugerenciasAsync.hasError)
+              // ─── 1. Identidad del chasis ───
+              _FormSectionCard(
+                icon: Icons.directions_car_rounded,
+                title: 'Identidad del chasis',
+                subtitle: 'Información básica del fabricante y modelo',
+                children: [
+                  TextFormField(
+                    controller: _marcaController,
+                    decoration: const InputDecoration(
+                      labelText: 'Marca *',
+                      hintText: 'ej. Toyota',
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Obligatorio' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _modeloController,
+                    decoration: const InputDecoration(
+                      labelText: 'Modelo *',
+                      hintText: 'ej. Supra',
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Obligatorio' : null,
+                  ),
+                  const SizedBox(height: 16),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        _esAuthInvalida(sugerenciasAsync.error)
-                            ? Icons.key_off
-                            : Icons.cloud_off,
-                        size: 14,
-                        color: theme.colorScheme.error,
+                      Expanded(
+                        flex: 4,
+                        child: TextFormField(
+                          controller: _anioController,
+                          decoration: const InputDecoration(
+                            labelText: 'Año *',
+                            hintText: 'ej. 1995',
+                          ),
+                          keyboardType: TextInputType.number,
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return 'Obligatorio';
+                            final anio = int.tryParse(v.trim());
+                            if (anio == null) return 'Año inválido';
+                            if (anio < 1900 || anio > 2100) {
+                              return 'Año fuera de rango';
+                            }
+                            return null;
+                          },
+                        ),
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _mensajeErrorServidor(sugerenciasAsync.error),
-                        style: TextStyle(
-                            fontSize: 12, color: theme.colorScheme.error),
-                      ),
-                    ],
-                  )
-                else if (sugerencias == null ||
-                    (sugerencias.motores.isEmpty &&
-                        sugerencias.transmisiones.isEmpty))
-                  Row(
-                    children: [
-                      Icon(Icons.search_off,
-                          size: 14, color: theme.hintColor),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Sin sugerencias para este chasis — completa a mano',
-                        style:
-                            TextStyle(fontSize: 12, color: theme.hintColor),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        flex: 6,
+                        child: TextFormField(
+                          controller: _trimController,
+                          decoration: const InputDecoration(
+                            labelText: 'Trim (opcional)',
+                            hintText: 'ej. GR',
+                          ),
+                        ),
                       ),
                     ],
                   ),
-              ],
-
-              const SizedBox(height: 28),
-
-              // ─── Drivetrain ───
-              _SectionTitle('Tracción'),
-              const SizedBox(height: 8),
-              Text(
-                'Selecciona el tipo de tracción',
-                style: theme.textTheme.bodySmall,
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: Drivetrain.values.map((dt) {
-                  final selected = dt == _drivetrain;
-                  return ChoiceChip(
-                    label: Text(dt.label),
-                    selected: selected,
-                    // Elección explícita — bloquea el auto-relleno.
-                    onSelected: (_) => setState(() {
-                      _drivetrain = dt;
-                      _drivetrainTocado = true;
-                    }),
-                  );
-                }).toList(),
-              ),
-
-              const SizedBox(height: 28),
-
-              // ─── Motor ───
-              _SectionTitle('Motor'),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _motorCodigoController,
-                decoration: InputDecoration(
-                  labelText: 'Código *',
-                  hintText: 'ej. 2JZ-GTE',
-                  // Descripción devuelta por la búsqueda del código —
-                  // confirma visualmente que el servidor lo reconoció
-                  // (y deja ver datos cuestionables para corregirlos).
-                  helperText: _helperCodigo(_infoMotorActual?.descripcion),
-                  border: const OutlineInputBorder(),
-                ),
-                textCapitalization: TextCapitalization.characters,
-                // Escribir desactiva el auto-relleno del chasis (vaciar lo
-                // re-activa) y programa la búsqueda de info por código.
-                onChanged: (v) {
-                  _motorTocado = v.trim().isNotEmpty;
-                  _motorDeSugerencia = false; // tecleado a mano
-                  _programarBusquedaCodigo();
-                },
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Obligatorio' : null,
-              ),
-              // Alternativas encontradas — tocar un chip lo elige.
-              if (sugerencias != null && sugerencias.motores.length > 1) ...[
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    for (final op in sugerencias.motores)
-                      ChoiceChip(
-                        label: Text(op.codigo),
-                        selected:
-                            _motorCodigoController.text.trim() == op.codigo,
-                        onSelected: (_) {
-                          _llenarMotor(op, forzar: true);
-                          _motorTocado = true; // elección explícita
-                        },
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _vinController,
+                    decoration: const InputDecoration(
+                      labelText: 'VIN (opcional)',
+                      hintText: '17 caracteres',
+                    ),
+                    textCapitalization: TextCapitalization.characters,
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 6,
+                        child: TextFormField(
+                          controller: _placaController,
+                          decoration: const InputDecoration(
+                            labelText: 'Placa (Colombia)',
+                            hintText: 'ej. ABC123',
+                          ),
+                          textCapitalization: TextCapitalization.characters,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 6,
+                        child: InkWell(
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: _fechaMatricula ?? DateTime.now(),
+                              firstDate: DateTime(1960),
+                              lastDate: DateTime.now(),
+                            );
+                            if (picked != null) {
+                              setState(() => _fechaMatricula = picked);
+                            }
+                          },
+                          child: InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: 'Fecha matrícula',
+                              suffixIcon: Icon(Icons.calendar_today, size: 18),
+                            ),
+                            child: Text(
+                              _fechaMatricula != null
+                                  ? formatearFecha(_fechaMatricula!)
+                                  : 'Opcional',
+                              style: _fechaMatricula != null
+                                  ? null
+                                  : TextStyle(
+                                      color:
+                                          theme.colorScheme.onSurfaceVariant),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (sugerenciasAsync != null) ...[
+                    const SizedBox(height: 12),
+                    if (sugerenciasAsync.isLoading)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.secondaryContainer
+                              .withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: theme.colorScheme.secondary,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Text('Buscando motorizaciones…',
+                                style: TextStyle(fontSize: 12)),
+                          ],
+                        ),
+                      )
+                    else if (sugerenciasAsync.hasError)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.errorContainer
+                              .withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              _esAuthInvalida(sugerenciasAsync.error)
+                                  ? Icons.key_off
+                                  : Icons.cloud_off,
+                              size: 14,
+                              color: theme.colorScheme.error,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                _mensajeErrorServidor(sugerenciasAsync.error),
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: theme.colorScheme.error),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (sugerencias == null ||
+                        (sugerencias.motores.isEmpty &&
+                            sugerencias.transmisiones.isEmpty))
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.search_off,
+                                size: 14, color: theme.hintColor),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Sin sugerencias para este chasis — completa a mano',
+                                style: TextStyle(
+                                    fontSize: 12, color: theme.hintColor),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                   ],
-                ),
-              ],
-              const SizedBox(height: 16),
-              DropdownButtonFormField<TipoCombustible>(
-                initialValue: _tipoCombustible,
-                decoration: const InputDecoration(
-                  labelText: 'Tipo de combustible',
-                  border: OutlineInputBorder(),
-                ),
-                items: TipoCombustible.values
-                    .map((tc) => DropdownMenuItem(
-                          value: tc,
-                          child: Text(tc.label),
-                        ))
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() {
-                      _tipoCombustible = v;
-                      _combustibleTocado = true; // elección explícita
-                    });
-                  }
-                },
+                ],
               ),
               const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+
+              // ─── 2. Tracción ───
+              _FormSectionCard(
+                icon: Icons.tune_rounded,
+                title: 'Tracción',
+                subtitle: 'Selecciona la tracción del vehículo',
                 children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _cilindradaController,
-                      decoration: const InputDecoration(
-                        labelText: 'Cilindrada (L, opcional)',
-                        hintText: 'ej. 3.0',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      // Escribir desactiva el auto-relleno; vaciar lo re-activa.
-                      onChanged: (v) =>
-                          _cilindradaTocado = v.trim().isNotEmpty,
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) return null;
-                        if (double.tryParse(v.trim()) == null) {
-                          return 'Inválido';
-                        }
-                        return null;
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _cilindrosController,
-                      decoration: const InputDecoration(
-                        labelText: 'Cilindros (opcional)',
-                        hintText: 'ej. 6',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      // Escribir desactiva el auto-relleno; vaciar lo re-activa.
-                      onChanged: (v) => _cilindrosTocado = v.trim().isNotEmpty,
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) return null;
-                        if (int.tryParse(v.trim()) == null) {
-                          return 'Inválido';
-                        }
-                        return null;
-                      },
-                    ),
+                  Wrap(
+                    spacing: 8,
+                    children: Drivetrain.values.map((dt) {
+                      final selected = dt == _drivetrain;
+                      return ChoiceChip(
+                        label: Text(dt.label),
+                        selected: selected,
+                        onSelected: (_) => setState(() {
+                          _drivetrain = dt;
+                          _drivetrainTocado = true;
+                        }),
+                      );
+                    }).toList(),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+
+              // ─── 3. Motor ───
+              _FormSectionCard(
+                icon: Icons.local_gas_station_rounded,
+                title: 'Motor',
+                subtitle: 'Configuración y especificaciones del motor',
                 children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _potenciaController,
-                      decoration: const InputDecoration(
-                        labelText: 'Potencia (HP, opcional)',
-                        hintText: 'ej. 255',
-                        border: OutlineInputBorder(),
+                  TextFormField(
+                    controller: _motorCodigoController,
+                    decoration: InputDecoration(
+                      labelText: 'Código *',
+                      hintText: 'ej. 2JZ-GTE',
+                      helperText: _helperCodigo(_infoMotorActual?.descripcion),
+                    ),
+                    textCapitalization: TextCapitalization.characters,
+                    onChanged: (v) {
+                      _motorTocado = v.trim().isNotEmpty;
+                      _motorDeSugerencia = false;
+                      _evaluarSwapsAutomaticos(sugerencias);
+                      _programarBusquedaCodigo();
+                      setState(() {});
+                    },
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Obligatorio' : null,
+                  ),
+                  if (sugerencias != null && sugerencias.motores.length > 1) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        for (final op in sugerencias.motores)
+                          ChoiceChip(
+                            label: Text(op.codigo),
+                            selected:
+                                _motorCodigoController.text.trim() == op.codigo,
+                            onSelected: (_) {
+                              _llenarMotor(op, forzar: true);
+                              _motorTocado = true;
+                            },
+                          ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _motorEsSwap
+                          ? theme.colorScheme.tertiaryContainer.withValues(alpha: 0.3)
+                          : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _motorEsSwap
+                            ? theme.colorScheme.tertiary
+                            : theme.colorScheme.outlineVariant,
                       ),
-                      keyboardType: TextInputType.number,
-                      // Escribir desactiva el auto-relleno; vaciar lo re-activa.
-                      onChanged: (v) => _potenciaTocado = v.trim().isNotEmpty,
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) return null;
-                        if (int.tryParse(v.trim()) == null) {
-                          return 'Inválido';
-                        }
-                        return null;
-                      },
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _motorEsSwap ? Icons.swap_horiz : Icons.verified_outlined,
+                          size: 18,
+                          color: _motorEsSwap
+                              ? theme.colorScheme.tertiary
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _motorEsSwap ? 'Motor Swap detectado' : 'Motor original / OEM',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: _motorEsSwap
+                                      ? theme.colorScheme.tertiary
+                                      : theme.colorScheme.onSurface,
+                                ),
+                              ),
+                              if (_motorEsSwap && _motorOriginalCodigo != null)
+                                Text(
+                                  'Original de fábrica: $_motorOriginalCodigo',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Text('¿Swap?', style: theme.textTheme.bodySmall),
+                        Switch(
+                          value: _motorEsSwap,
+                          onChanged: (v) => setState(() => _motorEsSwap = v),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _torqueController,
-                      decoration: const InputDecoration(
-                        labelText: 'Torque (Nm, opcional)',
-                        hintText: 'ej. 350',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      // Escribir desactiva el auto-relleno; vaciar lo re-activa.
-                      onChanged: (v) => _torqueTocado = v.trim().isNotEmpty,
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) return null;
-                        if (int.tryParse(v.trim()) == null) {
-                          return 'Inválido';
-                        }
-                        return null;
-                      },
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<TipoCombustible>(
+                    initialValue: _tipoCombustible,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo de combustible',
                     ),
+                    items: TipoCombustible.values
+                        .map((tc) => DropdownMenuItem(
+                              value: tc,
+                              child: Text(tc.label),
+                            ))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) {
+                        setState(() {
+                          _tipoCombustible = v;
+                          _combustibleTocado = true;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _cilindradaController,
+                          decoration: const InputDecoration(
+                            labelText: 'Cilindrada (L, opcional)',
+                            hintText: 'ej. 3.0',
+                          ),
+                          keyboardType:
+                              const TextInputType.numberWithOptions(
+                                  decimal: true),
+                          onChanged: (v) =>
+                              _cilindradaTocado = v.trim().isNotEmpty,
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return null;
+                            if (double.tryParse(v.trim()) == null) {
+                              return 'Inválido';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _cilindrosController,
+                          decoration: const InputDecoration(
+                            labelText: 'Cilindros (opcional)',
+                            hintText: 'ej. 6',
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (v) =>
+                              _cilindrosTocado = v.trim().isNotEmpty,
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return null;
+                            if (int.tryParse(v.trim()) == null) {
+                              return 'Inválido';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _potenciaController,
+                          decoration: const InputDecoration(
+                            labelText: 'Potencia (HP, opcional)',
+                            hintText: 'ej. 255',
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (v) =>
+                              _potenciaTocado = v.trim().isNotEmpty,
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return null;
+                            if (int.tryParse(v.trim()) == null) {
+                              return 'Inválido';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _torqueController,
+                          decoration: const InputDecoration(
+                            labelText: 'Torque (Nm, opcional)',
+                            hintText: 'ej. 350',
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (v) =>
+                              _torqueTocado = v.trim().isNotEmpty,
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return null;
+                            if (int.tryParse(v.trim()) == null) {
+                              return 'Inválido';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _aspiracionController,
+                    decoration: const InputDecoration(
+                      labelText: 'Aspiración (opcional)',
+                      hintText: 'NA / Turbo / Twin-Turbo / Supercharger',
+                    ),
+                    onChanged: (v) =>
+                        _aspiracionTocado = v.trim().isNotEmpty,
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _aspiracionController,
-                decoration: const InputDecoration(
-                  labelText: 'Aspiración (opcional)',
-                  hintText: 'NA / Turbo / Twin-Turbo / Supercharger',
-                  border: OutlineInputBorder(),
-                ),
-                // Escribir desactiva el auto-relleno; vaciar lo re-activa.
-                onChanged: (v) => _aspiracionTocado = v.trim().isNotEmpty,
-              ),
 
-              const SizedBox(height: 28),
-
-              // ─── Transmisión ───
-              _SectionTitle('Transmisión'),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _transmisionCodigoController,
-                decoration: InputDecoration(
-                  labelText: 'Código *',
-                  hintText: 'ej. R154',
-                  // Descripción devuelta por la búsqueda del código —
-                  // confirma visualmente que el servidor lo reconoció
-                  // (y deja ver datos cuestionables para corregirlos).
-                  helperText: _helperCodigo(_infoTransActual?.descripcion),
-                  border: const OutlineInputBorder(),
-                ),
-                textCapitalization: TextCapitalization.characters,
-                // Escribir desactiva el auto-relleno del chasis (vaciar lo
-                // re-activa) y programa la búsqueda de info por código.
-                onChanged: (v) {
-                  _transTocado = v.trim().isNotEmpty;
-                  _transDeSugerencia = false; // tecleado a mano
-                  _programarBusquedaCodigo();
-                },
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Obligatorio' : null,
-              ),
-              // Alternativas encontradas — tocar un chip lo elige.
-              if (sugerencias != null &&
-                  sugerencias.transmisiones.length > 1) ...[
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    for (final op in sugerencias.transmisiones)
-                      ChoiceChip(
-                        label: Text(op.codigo),
-                        selected: _transmisionCodigoController.text.trim() ==
-                            op.codigo,
-                        onSelected: (_) {
-                          _llenarTransmision(op, forzar: true);
-                          _transTocado = true; // elección explícita
-                        },
-                      ),
+              // ─── 4. Transmisión ───
+              _FormSectionCard(
+                icon: Icons.settings_suggest_rounded,
+                title: 'Transmisión',
+                subtitle: 'Caja de cambios y relaciones',
+                children: [
+                  TextFormField(
+                    controller: _transmisionCodigoController,
+                    decoration: InputDecoration(
+                      labelText: 'Código *',
+                      hintText: 'ej. R154',
+                      helperText: _helperCodigo(_infoTransActual?.descripcion),
+                    ),
+                    textCapitalization: TextCapitalization.characters,
+                    onChanged: (v) {
+                      _transTocado = v.trim().isNotEmpty;
+                      _transDeSugerencia = false;
+                      _evaluarSwapsAutomaticos(sugerencias);
+                      _programarBusquedaCodigo();
+                      setState(() {});
+                    },
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Obligatorio' : null,
+                  ),
+                  if (sugerencias != null &&
+                      sugerencias.transmisiones.length > 1) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        for (final op in sugerencias.transmisiones)
+                          ChoiceChip(
+                            label: Text(op.codigo),
+                            selected: _transmisionCodigoController.text.trim() ==
+                                op.codigo,
+                            onSelected: (_) {
+                              _llenarTransmision(op, forzar: true);
+                              _transTocado = true;
+                            },
+                          ),
+                      ],
+                    ),
                   ],
-                ),
-              ],
-              const SizedBox(height: 16),
-              DropdownButtonFormField<TipoTransmision>(
-                initialValue: _tipoTransmision,
-                decoration: const InputDecoration(
-                  labelText: 'Tipo',
-                  border: OutlineInputBorder(),
-                ),
-                items: TipoTransmision.values
-                    .map((tt) => DropdownMenuItem(
-                          value: tt,
-                          child: Text(tt.label),
-                        ))
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() {
-                      _tipoTransmision = v;
-                      _tipoTransTocado = true; // elección explícita
-                    });
-                  }
-                },
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _transEsSwap
+                          ? theme.colorScheme.tertiaryContainer.withValues(alpha: 0.3)
+                          : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _transEsSwap
+                            ? theme.colorScheme.tertiary
+                            : theme.colorScheme.outlineVariant,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _transEsSwap ? Icons.swap_horiz : Icons.verified_outlined,
+                          size: 18,
+                          color: _transEsSwap
+                              ? theme.colorScheme.tertiary
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _transEsSwap ? 'Transmisión Swap detectada' : 'Transmisión original / OEM',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: _transEsSwap
+                                      ? theme.colorScheme.tertiary
+                                      : theme.colorScheme.onSurface,
+                                ),
+                              ),
+                              if (_transEsSwap && _transOriginalCodigo != null)
+                                Text(
+                                  'Original de fábrica: $_transOriginalCodigo',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Text('¿Swap?', style: theme.textTheme.bodySmall),
+                        Switch(
+                          value: _transEsSwap,
+                          onChanged: (v) => setState(() => _transEsSwap = v),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<TipoTransmision>(
+                    initialValue: _tipoTransmision,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo',
+                    ),
+                    items: TipoTransmision.values
+                        .map((tt) => DropdownMenuItem(
+                              value: tt,
+                              child: Text(tt.label),
+                            ))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) {
+                        setState(() {
+                          _tipoTransmision = v;
+                          _tipoTransTocado = true;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _marchasController,
+                    decoration: const InputDecoration(
+                      labelText: 'Marchas (opcional)',
+                      hintText: 'ej. 6',
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) => _marchasTocado = v.trim().isNotEmpty,
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return null;
+                      if (int.tryParse(v.trim()) == null) return 'Inválido';
+                      return null;
+                    },
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _marchasController,
-                decoration: const InputDecoration(
-                  labelText: 'Marchas (opcional)',
-                  hintText: 'ej. 6',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                // Escribir desactiva el auto-relleno; vaciar lo re-activa.
-                onChanged: (v) => _marchasTocado = v.trim().isNotEmpty,
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) return null;
-                  if (int.tryParse(v.trim()) == null) return 'Inválido';
-                  return null;
-                },
-              ),
 
-              const SizedBox(height: 28),
-
-              // ─── Kilometraje y uso ───
-              _SectionTitle('Kilometraje y uso'),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _kilometrajeController,
-                decoration: const InputDecoration(
-                  labelText: 'Kilometraje actual',
-                  hintText: 'ej. 120000',
-                  border: OutlineInputBorder(),
-                  suffixText: 'km',
-                ),
-                keyboardType: TextInputType.number,
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) return null;
-                  if (int.tryParse(v.trim()) == null) return 'Inválido';
-                  return null;
-                },
+              // ─── 5. Kilometraje y uso ───
+              _FormSectionCard(
+                icon: Icons.speed_rounded,
+                title: 'Kilometraje y uso',
+                subtitle: 'Determina los intervalos preventivos',
+                children: [
+                  TextFormField(
+                    controller: _kilometrajeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Kilometraje actual',
+                      hintText: 'ej. 120000',
+                      suffixText: 'km',
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return null;
+                      if (int.tryParse(v.trim()) == null) return 'Inválido';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    value: _usoSevero,
+                    onChanged: (v) => setState(() => _usoSevero = v),
+                    title: const Text('Uso severo'),
+                    subtitle: const Text(
+                      'Ciudad, tráfico, remolque o polvo — acorta los intervalos recomendados',
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  if (!esEdicion) ...[
+                    const Divider(height: 24),
+                    SwitchListTile(
+                      value: _mantenimientoAlDia,
+                      onChanged: (v) => setState(() => _mantenimientoAlDia = v),
+                      title: const Text('Mantenimientos al día'),
+                      subtitle: Text(
+                        _mantenimientoAlDia
+                            ? 'Los mantenimientos arrancarán desde hoy y tu odómetro actual.'
+                            : 'Recomendado: los ítems quedarán como "Sin registro" hasta que registres su historial o uses el Asistente de Línea Base.',
+                      ),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 16),
-              CheckboxListTile(
-                value: _usoSevero,
-                onChanged: (v) => setState(() => _usoSevero = v ?? false),
-                title: const Text('Uso severo'),
-                subtitle: const Text(
-                  'Ciudad, remolque, polvo — acorta los intervalos',
-                ),
-                contentPadding: EdgeInsets.zero,
-              ),
-
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
 
               // ─── Botón guardar ───
               SizedBox(
@@ -989,10 +1279,10 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
                       ? 'Guardando…'
                       : esEdicion
                           ? 'Guardar cambios'
-                          : 'Guardar'),
+                          : 'Guardar vehículo'),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
             ],
           ),
         ),
@@ -1001,20 +1291,71 @@ class _CrearVehiculoScreenState extends ConsumerState<CrearVehiculoScreen> {
   }
 }
 
-/// Subtítulo de sección con estilo consistente.
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+/// Tarjeta para agrupar secciones del formulario con un encabezado con icono,
+/// título y subtítulo, dando orden visual al configurador del vehículo.
+class _FormSectionCard extends StatelessWidget {
+  const _FormSectionCard({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.children,
+  });
 
-  final String text;
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Text(
-      text,
-      style: theme.textTheme.titleMedium?.copyWith(
-        fontWeight: FontWeight.w600,
-        color: theme.colorScheme.primary,
+    final cs = theme.colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: cs.primaryContainer,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, size: 20, color: cs.onPrimaryContainer),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ...children,
+          ],
+        ),
       ),
     );
   }

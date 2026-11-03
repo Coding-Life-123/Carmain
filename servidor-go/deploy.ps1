@@ -21,7 +21,20 @@ if ($VpsHost -like "CAMBIA-ME*") { throw "Edita -VpsHost (o el default) con tu s
 
 Push-Location $PSScriptRoot
 try {
-  # Cross-compile para ARM64 sin CGO.
+  # 1. Compilar web-mecanico y actualizar dist embebido
+  Write-Host "Compilando SPA web-mecanico..." -ForegroundColor Cyan
+  Push-Location "$PSScriptRoot\..\web-mecanico"
+  npm run build
+  if ($LASTEXITCODE -ne 0) { throw "npm run build fallo en web-mecanico" }
+  Pop-Location
+
+  if (Test-Path "$PSScriptRoot\webmecanico\dist") {
+    Remove-Item -Recurse -Force "$PSScriptRoot\webmecanico\dist"
+  }
+  Copy-Item -Recurse "$PSScriptRoot\..\web-mecanico\dist" "$PSScriptRoot\webmecanico\dist"
+  Write-Host "web-mecanico embebido actualizado" -ForegroundColor Green
+
+  # 2. Cross-compile para ARM64 sin CGO.
   $env:GOOS = "linux"; $env:GOARCH = "arm64"; $env:CGO_ENABLED = "0"
   & $GoExe build -trimpath -ldflags "-s -w" -o build/carmain-server .
   if ($LASTEXITCODE -ne 0) { throw "go build fallo" }

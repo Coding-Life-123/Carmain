@@ -47,6 +47,15 @@ PlanMantenimiento? parsearPlanDelServidor(
   if (items.isEmpty) return null;
   saneado['items'] = items;
 
+  final rawAlertas = saneado['alertasIngenieria'];
+  final alertas = <Map<String, dynamic>>[];
+  for (final raw in (rawAlertas is List ? rawAlertas : const [])) {
+    if (raw is! Map) continue;
+    final alerta = _sanearAlerta(Map<String, dynamic>.from(raw));
+    if (alerta != null) alertas.add(alerta);
+  }
+  saneado['alertasIngenieria'] = alertas;
+
   // El servidor no conoce el vehículo — la copia local es la que lo asocia.
   saneado['vehiculoId'] = vehiculoId;
 
@@ -62,6 +71,10 @@ final Set<String> _componentesValidos =
     TipoComponente.values.map((e) => e.name).toSet();
 final Set<String> _confianzasValidas =
     NivelConfianza.values.map((e) => e.name).toSet();
+final Set<String> _severidadesValidas =
+    SeveridadIngenieria.values.map((e) => e.name).toSet();
+final Set<String> _vectoresValidos =
+    VectorEstresSwap.values.map((e) => e.name).toSet();
 // FuentePlan.iaInferida viaja como 'ia' (@JsonValue) — ver enums.dart.
 const Set<String> _fuentesValidas = {'oem', 'web', 'ia'};
 
@@ -102,12 +115,42 @@ Map<String, dynamic>? _sanearItem(Map<String, dynamic> item) {
   // Opcionales: si vienen con tipo incorrecto, fuera.
   if (item['intervaloMeses'] is! num) item.remove('intervaloMeses');
   if (item['intervaloSeveroKm'] is! num) item.remove('intervaloSeveroKm');
+  if (item['esVigilanciaSwap'] is! bool) item['esVigilanciaSwap'] = false;
 
   if (item['id'] is! String || (item['id'] as String).isEmpty) {
     item['id'] = const Uuid().v4();
   }
 
   return item;
+}
+
+Map<String, dynamic>? _sanearAlerta(Map<String, dynamic> alerta) {
+  final vector = alerta['vector'];
+  if (vector is! String || !_vectoresValidos.contains(vector)) {
+    alerta['vector'] = 'soportesNvh';
+  }
+
+  final severidad = alerta['severidad'];
+  if (severidad is! String || !_severidadesValidas.contains(severidad)) {
+    alerta['severidad'] = 'media';
+  }
+
+  final titulo = alerta['titulo'];
+  if (titulo is! String || titulo.trim().isEmpty) return null;
+
+  final diagnostico = alerta['diagnostico'];
+  if (diagnostico is! String || diagnostico.trim().isEmpty) return null;
+
+  final componente = alerta['componenteAfectado'];
+  if (componente is! String || componente.trim().isEmpty) {
+    alerta['componenteAfectado'] = 'Tren motriz';
+  }
+
+  if (alerta['id'] is! String || (alerta['id'] as String).isEmpty) {
+    alerta['id'] = const Uuid().v4();
+  }
+
+  return alerta;
 }
 
 void _avisar(String campo, Object? valor) {

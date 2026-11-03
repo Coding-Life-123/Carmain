@@ -103,6 +103,27 @@ class ApiClient {
       'drivetrain': vehiculo.drivetrain.label,
       'motorCodigo': vehiculo.motor.codigo,
       'transCodigo': vehiculo.transmision.codigo,
+      'motorEsSwap': (!vehiculo.motor.esOriginal).toString(),
+      if (vehiculo.motor.originalCodigo != null)
+        'motorOriginal': vehiculo.motor.originalCodigo,
+      'combustible': vehiculo.motor.tipoCombustible.name,
+      if (vehiculo.motor.cilindrada != null)
+        'cilindrada': vehiculo.motor.cilindrada.toString(),
+      if (vehiculo.motor.cilindros != null)
+        'cilindros': vehiculo.motor.cilindros.toString(),
+      if (vehiculo.motor.aspiracion != null &&
+          vehiculo.motor.aspiracion!.isNotEmpty)
+        'aspiracion': vehiculo.motor.aspiracion,
+      if (vehiculo.motor.potenciaHp != null)
+        'potenciaHp': vehiculo.motor.potenciaHp.toString(),
+      if (vehiculo.motor.torqueNm != null)
+        'torqueNm': vehiculo.motor.torqueNm.toString(),
+      'transEsSwap': (!vehiculo.transmision.esOriginal).toString(),
+      if (vehiculo.transmision.originalCodigo != null)
+        'transOriginal': vehiculo.transmision.originalCodigo,
+      'transTipo': vehiculo.transmision.tipo.name,
+      if (vehiculo.transmision.marchas != null)
+        'transMarchas': vehiculo.transmision.marchas.toString(),
     });
 
     final data = response.data['plan'] as Map<String, dynamic>?;
@@ -161,22 +182,78 @@ class ApiClient {
     return fromJson(Map<String, dynamic>.from(opcion));
   }
 
-  /// Crea una sesión de compartido con un mecánico (para relay remoto).
-  /// Retorna el código/invite que el mecánico usa para conectarse.
+  /// Crea una sesión de compartido con un mecánico (para relay remoto y buzón store-and-forward).
+  /// Retorna el código corto (6 caracteres) para compatibilidad.
   Future<String> crearSesion({
     required String vehiculoId,
-    required Duration duracion,
+    Duration duracion = const Duration(hours: 24),
+    Map<String, dynamic>? snapshot,
+    String? deviceId,
   }) async {
-    final response = await _dio.post('/api/sesion', data: {
+    final res = await crearSesionDetallada(
+      vehiculoId: vehiculoId,
+      duracion: duracion,
+      snapshot: snapshot,
+      deviceId: deviceId,
+    );
+    return res.codigo;
+  }
+
+  /// Crea una sesión de compartido retornando código corto, token largo de alta entropía y expiración.
+  Future<({String codigo, String? tokenLargo, DateTime expiraEn})>
+      crearSesionDetallada({
+    required String vehiculoId,
+    Duration duracion = const Duration(hours: 24),
+    Map<String, dynamic>? snapshot,
+    String? deviceId,
+  }) async {
+    final payload = <String, dynamic>{
       'vehiculoId': vehiculoId,
       'duracionSegundos': duracion.inSeconds,
-    });
-    return response.data['codigo'] as String;
+    };
+    if (snapshot != null) payload['snapshot'] = snapshot;
+    if (deviceId != null) payload['deviceId'] = deviceId;
+
+    final response = await _dio.post('/api/sesion', data: payload);
+    final codigo = response.data['codigo'] as String;
+    final tokenLargo = response.data['tokenLargo'] as String?;
+    final expiraEnStr = response.data['expiraEn'] as String?;
+    final expiraEn = expiraEnStr != null
+        ? DateTime.parse(expiraEnStr)
+        : DateTime.now().add(duracion);
+
+    return (codigo: codigo, tokenLargo: tokenLargo, expiraEn: expiraEn);
   }
 
   /// Revoca una sesión de compartido activa.
   Future<void> revocarSesion(String codigo) async {
     await _dio.delete('/api/sesion/$codigo');
+  }
+
+  /// Obtiene las propuestas de mantenimiento pendientes dejadas por el taller en el buzón.
+  Future<List<Map<String, dynamic>>> obtenerPropuestasPendientes(String codigo) async {
+    final response = await _dio.get('/api/sesion/$codigo/propuestas');
+    final data = response.data['propuestas'] as List?;
+    if (data == null) return const [];
+    return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  /// Confirma las propuestas procesadas y vacía el buzón en el servidor.
+  Future<void> confirmarPropuestas(String codigo) async {
+    await _dio.post('/api/sesion/$codigo/confirmar');
+  }
+
+  /// Consulta el snapshot público de una sesión (usado por la web del mecánico).
+  Future<Map<String, dynamic>?> obtenerSesionPublica(String codigo) async {
+    final response = await _dio.get('/api/sesion/$codigo');
+    final data = response.data;
+    if (data is! Map<String, dynamic>) return null;
+    return data;
+  }
+
+  /// Envía una propuesta de mantenimiento desde la web del mecánico al buzón store-and-forward.
+  Future<void> enviarPropuestaMecanico(String codigo, Map<String, dynamic> propuesta) async {
+    await _dio.post('/api/sesion/$codigo/propuesta', data: propuesta);
   }
 
   /// URL del WebSocket para el relay.

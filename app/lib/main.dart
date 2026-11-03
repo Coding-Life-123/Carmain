@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -76,6 +77,110 @@ TextTheme _textTheme(Brightness brillo) {
   );
 }
 
+/// Tema completo: además de colores y tipografía define el aspecto de los
+/// componentes (cards, inputs, chips, FAB, diálogos...) en un solo sitio,
+/// para que ninguna pantalla tenga que sobrescribir estilos a mano y todas
+/// se vean consistentes en claro y oscuro.
+ThemeData _tema(ColorScheme cs) {
+  final textTheme = _textTheme(cs.brightness);
+  final radio = BorderRadius.circular(14);
+  OutlineInputBorder borde(Color color, [double ancho = 1]) =>
+      OutlineInputBorder(
+        borderRadius: radio,
+        borderSide: BorderSide(color: color, width: ancho),
+      );
+
+  return ThemeData(
+    colorScheme: cs,
+    useMaterial3: true,
+    textTheme: textTheme,
+    scaffoldBackgroundColor: cs.surface,
+    appBarTheme: AppBarTheme(
+      backgroundColor: cs.surface,
+      foregroundColor: cs.onSurface,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+      titleTextStyle: textTheme.headlineSmall?.copyWith(
+        color: cs.onSurface,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+    cardTheme: CardThemeData(
+      elevation: 0,
+      color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+      surfaceTintColor: Colors.transparent,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
+    ),
+    dividerTheme: DividerThemeData(color: cs.outlineVariant, space: 1),
+    expansionTileTheme: ExpansionTileThemeData(
+      shape: const Border(),
+      collapsedShape: const Border(),
+      tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      border: borde(cs.outline),
+      enabledBorder: borde(cs.outline),
+      focusedBorder: borde(cs.secondary, 2),
+      errorBorder: borde(cs.error),
+      focusedErrorBorder: borde(cs.error, 2),
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: cs.surfaceContainerHighest,
+      side: BorderSide.none,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      labelStyle: textTheme.bodySmall?.copyWith(
+        color: cs.onSurfaceVariant,
+        fontWeight: FontWeight.w500,
+      ),
+    ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: cs.primary,
+      foregroundColor: cs.onPrimary,
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(0, 48),
+        shape: RoundedRectangleBorder(borderRadius: radio),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 44),
+        shape: RoundedRectangleBorder(borderRadius: radio),
+        side: BorderSide(color: cs.outline),
+      ),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: radio),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: cs.surface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: cs.surface,
+      surfaceTintColor: Colors.transparent,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      linearMinHeight: 6,
+      borderRadius: BorderRadius.circular(3),
+    ),
+  );
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -105,16 +210,18 @@ class CarMainApp extends StatelessWidget {
     return MaterialApp(
       title: 'CarMain',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: _esquemaLight,
-        useMaterial3: true,
-        textTheme: _textTheme(Brightness.light),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: _esquemaDark,
-        useMaterial3: true,
-        textTheme: _textTheme(Brightness.dark),
-      ),
+      locale: const Locale('es', 'CO'),
+      supportedLocales: const [
+        Locale('es', 'CO'),
+        Locale('es'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      theme: _tema(_esquemaLight),
+      darkTheme: _tema(_esquemaDark),
       home: const DashboardScreen(),
       routes: {
         '/crear-vehiculo': (_) => const CrearVehiculoScreen(),

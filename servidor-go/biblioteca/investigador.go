@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/carmain/servidor-go/shared"
@@ -12,7 +13,8 @@ import (
 
 // planIAResponse es la estructura JSON que se le pide a Gemini que devuelva.
 type planIAResponse struct {
-	Items []shared.ItemMantenimiento `json:"items"`
+	Items             []shared.ItemMantenimiento `json:"items"`
+	AlertasIngenieria []shared.AlertaIngenieria  `json:"alertasIngenieria,omitempty"`
 }
 
 // InvestigarPlan genera un plan de mantenimiento preventivo para un vehículo
@@ -54,25 +56,74 @@ func investigarConGemini(config shared.ConfigVehiculo) (*shared.PlanMantenimient
 
 	// Construir el plan final
 	plan := &shared.PlanMantenimiento{
-		ID:              uuid.NewString(),
-		Config:          config,
-		Version:         1,
-		FechaGeneracion: time.Now(),
-		Items:           planResp.Items,
+		ID:                uuid.NewString(),
+		Config:            config,
+		Version:           1,
+		FechaGeneracion:   time.Now(),
+		Items:             planResp.Items,
+		AlertasIngenieria: planResp.AlertasIngenieria,
 	}
 
 	return plan, nil
 }
 
+func valorIntStr(p *int) string {
+	if p == nil {
+		return "N/D"
+	}
+	return fmt.Sprintf("%d", *p)
+}
+
+func valorFloatStr(p *float64) string {
+	if p == nil {
+		return "N/D"
+	}
+	return fmt.Sprintf("%.1f", *p)
+}
+
 // construirPrompt genera el prompt para Gemini pidiendo un plan de mantenimiento
-// estructurado en JSON, adaptado al drivetrain del vehículo.
+// estructurado en JSON, adaptado al drivetrain del vehículo y a la detección de swaps.
 //
 // IMPORTANTE: los valores de "categoria", "componenteAplica", "fuente" y
 // "confianza" son un contrato con la app móvil (enums en app/lib/models/enums.dart).
 // El consumidor valida contra enums estrictos — un valor fuera de estos
 // conjuntos hace que la app descarte o degrade el ítem.
 func construirPrompt(config shared.ConfigVehiculo) string {
-	return fmt.Sprintf(`Eres un experto en mantenimiento automotriz. Genera un plan de mantenimiento preventivo para el siguiente vehículo:
+	extraSwap := ""
+	if config.MotorEsSwap || config.TransEsSwap {
+		extraSwap = fmt.Sprintf(`
+VEHÍCULO MODIFICADO CON SWAP:
+- Motor Swap: %t (Código actual: %s, Código OEM original: %s)
+- Transmisión Swap: %t (Código actual: %s, Código OEM original: %s)
+- Combustible: %s, Cilindrada: %s L, Cilindros: %s, Aspiración: %s
+- Potencia estimada: %s HP, Torque estimado: %s Nm
+
+INSTRUCCIÓN ESPECIAL DE INGENIERÍA PARA SWAPS:
+Este vehículo tiene un tren motriz modificado. Evalúa la asimetría mecánica y cuellos de botella según estos 6 vectores:
+1. "torqueDiferencial": Esfuerzo de par sobre corona/piñón y semiejes del chasis.
+2. "limiteTransmision": Límite de torque de la caja y fatiga del embrague.
+3. "disipacionTermica": Carga térmica para el radiador OEM (especialmente si es turbo o mayor cilindrada).
+4. "frenadoMasa": Fatiga de frenos OEM y bujes de tren delantero ante mayor velocidad/masa.
+5. "alimentacionCombustible": Caudal de bomba de combustible para evitar mezclas pobres (lean-out).
+6. "soportesNvh": Torsión sobre patas de motor adaptadas, cardán y subchasis.
+
+En el JSON debes:
+1. Acortar el intervalo de fluido de transmisión y diferencial a 20.000 - 30.000 km (especificando fluido sintético de extrema presión).
+2. Incluir ítems preventivos de vigilancia ("esVigilanciaSwap": true):
+   - Inspección de tapón magnético en caja y diferencial para detectar viruta/limalla.
+   - Re-torqueo de soportes de motor/caja, cardán y subchasis (cada 10.000 km o 6 meses).
+   - Inspección de homocinéticas, crucetas y bujes de tren trasero.
+   - Si es turbo/sobrealimentado: inspección de mangueras de intercooler, abrazaderas y líneas de combustible.
+3. Generar el arreglo "alertasIngenieria" con los cuellos de botella detectados para esta combinación chasis-motor-caja.
+`,
+			config.MotorEsSwap, config.MotorCodigo, config.MotorOriginal,
+			config.TransEsSwap, config.TransCodigo, config.TransOriginal,
+			config.Combustible, valorFloatStr(config.Cilindrada), valorIntStr(config.Cilindros), config.Aspiracion,
+			valorIntStr(config.PotenciaHP), valorIntStr(config.TorqueNm),
+		)
+	}
+
+	return fmt.Sprintf(`Eres un experto en mantenimiento e ingeniería automotriz. Genera un plan de mantenimiento preventivo para el siguiente vehículo:
 
 - Marca: %s
 - Modelo: %s
@@ -81,7 +132,7 @@ func construirPrompt(config shared.ConfigVehiculo) string {
 - Drivetrain: %s
 - Código de motor: %s
 - Código de transmisión: %s
-
+%s
 Devuelve EXCLUSIVAMENTE un JSON válido (sin markdown, sin texto adicional) con esta estructura:
 
 {
@@ -95,7 +146,19 @@ Devuelve EXCLUSIVAMENTE un JSON válido (sin markdown, sin texto adicional) con 
       "intervaloMeses": 12,
       "intervaloSeveroKm": 5000,
       "fuente": "ia",
-      "confianza": "alta | media | baja"
+      "confianza": "alta | media | baja",
+      "esVigilanciaSwap": false
+    }
+  ],
+  "alertasIngenieria": [
+    {
+      "id": "alerta-1",
+      "vector": "torqueDiferencial | limiteTransmision | disipacionTermica | frenadoMasa | alimentacionCombustible | soportesNvh",
+      "severidad": "alta | media | recomendacion",
+      "componenteAfectado": "nombre del componente",
+      "titulo": "título corto de la alerta",
+      "diagnostico": "explicación técnica del cuello de botella",
+      "recomendacionUpgrade": "recomendación de pieza reforzada o procedimiento"
     }
   ]
 }
@@ -120,15 +183,13 @@ Consideraciones:
 - Asigna "confianza": "alta" para ítems estándar, "media" para ítems que dependen del uso, "baja" si hay incertidumbre.
 - Usa "fuente": "ia" para todos los ítems.`,
 		config.Marca, config.Modelo, config.Anio, config.Trim, config.Drivetrain,
-		config.MotorCodigo, config.TransCodigo, config.Drivetrain,
+		config.MotorCodigo, config.TransCodigo, extraSwap, config.Drivetrain,
 	)
 }
 
 // planFallback genera un plan de mantenimiento genérico cuando no hay API key
-// o la llamada a Claude falla. Incluye los ítems más comunes con intervalos estándar.
-//
-// Los valores de Categoria/ComponenteAplica siguen el vocabulario canónico
-// del contrato con la app (ver construirPrompt).
+// o la llamada a Gemini falla. Incluye los ítems más comunes con intervalos estándar
+// e ítems de vigilancia y alertas de ingeniería si el vehículo tiene swaps.
 func planFallback(config shared.ConfigVehiculo) *shared.PlanMantenimiento {
 	meses12 := 12
 	meses24 := 24
@@ -136,6 +197,13 @@ func planFallback(config shared.ConfigVehiculo) *shared.PlanMantenimiento {
 	kmSevero5k := 5000
 	kmSevero10k := 10000
 	kmSevero15k := 15000
+
+	kmTransmision := 60000
+	mesesTransmision := meses24
+	if config.MotorEsSwap || config.TransEsSwap {
+		kmTransmision = 25000
+		mesesTransmision = meses12
+	}
 
 	items := []shared.ItemMantenimiento{
 		{
@@ -214,10 +282,10 @@ func planFallback(config shared.ConfigVehiculo) *shared.PlanMantenimiento {
 		{
 			ID:               "transmision-fluido",
 			Categoria:        "transmision",
-			Descripcion:      "Cambio de fluido de transmisión",
+			Descripcion:      "Cambio de fluido de transmisión (sintético)",
 			ComponenteAplica: "transmision",
-			IntervaloKm:      60000,
-			IntervaloMeses:   &meses24,
+			IntervaloKm:      kmTransmision,
+			IntervaloMeses:   &mesesTransmision,
 			Fuente:           "ia",
 			Confianza:        "media",
 		},
@@ -243,35 +311,126 @@ func planFallback(config shared.ConfigVehiculo) *shared.PlanMantenimiento {
 		},
 	}
 
-	// Si es AWD o 4WD, agregar servicio de diferencial y transfer case
-	if config.Drivetrain == "AWD" || config.Drivetrain == "4WD" {
+	// Si es AWD o 4WD o RWD con swap, agregar servicio de diferencial
+	kmDiferencial := 60000
+	mesesDiferencial := meses24
+	if config.MotorEsSwap || config.TransEsSwap {
+		kmDiferencial = 25000
+		mesesDiferencial = meses12
+	}
+
+	if config.Drivetrain == "AWD" || config.Drivetrain == "4WD" || (config.Drivetrain == "RWD" && (config.MotorEsSwap || config.TransEsSwap)) {
 		items = append(items, shared.ItemMantenimiento{
 			ID:               "diferencial-fluido",
 			Categoria:        "diferencial",
-			Descripcion:      "Cambio de fluido de diferencial(es)",
+			Descripcion:      "Cambio de fluido de diferencial (extrema presión / LSD)",
 			ComponenteAplica: "diferencial",
-			IntervaloKm:      60000,
-			IntervaloMeses:   &meses24,
+			IntervaloKm:      kmDiferencial,
+			IntervaloMeses:   &mesesDiferencial,
 			Fuente:           "ia",
 			Confianza:        "media",
 		})
+	}
+	if config.Drivetrain == "AWD" || config.Drivetrain == "4WD" {
 		items = append(items, shared.ItemMantenimiento{
 			ID:               "transfer-case",
 			Categoria:        "diferencial",
 			Descripcion:      "Cambio de fluido de transfer case",
 			ComponenteAplica: "transferCase",
-			IntervaloKm:      60000,
-			IntervaloMeses:   &meses24,
+			IntervaloKm:      kmDiferencial,
+			IntervaloMeses:   &mesesDiferencial,
 			Fuente:           "ia",
 			Confianza:        "media",
 		})
 	}
 
+	var alertas []shared.AlertaIngenieria
+	if config.MotorEsSwap || config.TransEsSwap {
+		// Ítems de vigilancia swap
+		items = append(items, shared.ItemMantenimiento{
+			ID:               "swap-tapon-magnetico",
+			Categoria:        "transmision",
+			Descripcion:      "Inspección de tapón magnético en transmisión y diferencial (búsqueda de virutas)",
+			ComponenteAplica: "transmision",
+			IntervaloKm:      15000,
+			IntervaloMeses:   &meses12,
+			EsVigilanciaSwap: true,
+			Fuente:           "ia",
+			Confianza:        "alta",
+		})
+		items = append(items, shared.ItemMantenimiento{
+			ID:               "swap-retorqueo-soportes",
+			Categoria:        "inspeccion",
+			Descripcion:      "Re-torqueo de soportes de motor, transmisión, cardán y subchasis",
+			ComponenteAplica: "otro",
+			IntervaloKm:      10000,
+			IntervaloMeses:   &meses6,
+			EsVigilanciaSwap: true,
+			Fuente:           "ia",
+			Confianza:        "alta",
+		})
+		items = append(items, shared.ItemMantenimiento{
+			ID:               "swap-inspeccion-semiejes",
+			Categoria:        "suspension",
+			Descripcion:      "Inspección de juntas homocinéticas, crucetas y bujes de tren trasero",
+			ComponenteAplica: "diferencial",
+			IntervaloKm:      15000,
+			IntervaloMeses:   &meses12,
+			EsVigilanciaSwap: true,
+			Fuente:           "ia",
+			Confianza:        "alta",
+		})
+
+		if strings.Contains(strings.ToLower(config.Aspiracion), "turbo") || strings.Contains(strings.ToLower(config.Aspiracion), "supercharger") {
+			items = append(items, shared.ItemMantenimiento{
+				ID:               "swap-lineas-presion",
+				Categoria:        "inspeccion",
+				Descripcion:      "Inspección de mangueras de intercooler, abrazaderas y líneas de combustible",
+				ComponenteAplica: "motor",
+				IntervaloKm:      10000,
+				IntervaloMeses:   &meses6,
+				EsVigilanciaSwap: true,
+				Fuente:           "ia",
+				Confianza:        "alta",
+			})
+		}
+
+		// Alertas de ingeniería para el swap
+		alertas = append(alertas, shared.AlertaIngenieria{
+			ID:                   "alerta-diff",
+			Vector:               "torqueDiferencial",
+			Severidad:            "alta",
+			ComponenteAfectado:   "Diferencial y Semiejes",
+			Titulo:               "Sobrecarga de par torsional sobre diferencial original",
+			Diagnostico:          "El incremento de torque del motor actual somete a esfuerzo severo los semiejes y la relación piñón-corona diseñados para el motor OEM.",
+			RecomendacionUpgrade: "Inspeccionar limalla en tapón magnético y evaluar upgrade a diferencial LSD reforzado.",
+		})
+		alertas = append(alertas, shared.AlertaIngenieria{
+			ID:                   "alerta-soportes",
+			Vector:               "soportesNvh",
+			Severidad:            "media",
+			ComponenteAfectado:   "Soportes de motor y subchasis",
+			Titulo:               "Fatiga en soportes adaptadores y bujes",
+			Diagnostico:          "Las patas de motor adaptadas transmiten mayor vibración y torsión al subchasis delantero.",
+			RecomendacionUpgrade: "Re-torqueo periódico y uso de bujes de poliuretano de dureza intermedia.",
+		})
+		alertas = append(alertas, shared.AlertaIngenieria{
+			ID:                   "alerta-termica",
+			Vector:               "disipacionTermica",
+			Severidad:            "media",
+			ComponenteAfectado:   "Sistema de Refrigeración",
+			Titulo:               "Disipación térmica en vano motor",
+			Diagnostico:          "Mayor densidad de potencia requiere controlar picos de temperatura en aceite y refrigerante.",
+			RecomendacionUpgrade: "Radiador de aluminio de mayor capacidad y líquido refrigerante de alto rendimiento.",
+		})
+	}
+
 	return &shared.PlanMantenimiento{
-		ID:              uuid.NewString(),
-		Config:          config,
-		Version:         1,
-		FechaGeneracion: time.Now(),
-		Items:           items,
+		ID:                uuid.NewString(),
+		Config:            config,
+		Version:           1,
+		FechaGeneracion:   time.Now(),
+		Items:             items,
+		AlertasIngenieria: alertas,
 	}
 }

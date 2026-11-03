@@ -1,5 +1,7 @@
 # Flutter
 app/build/
+app/android/build/
+app/android/.gradle/
 app/.dart_tool/
 app/.flutter-plugins
 app/.flutter-plugins-dependencies
@@ -30,8 +32,15 @@ servidor-go/*.log
 .DS_Store
 Thumbs.db
 
+# Node / Web Mecánico
+web-mecanico/node_modules/
+web-mecanico/dist/
+web-mecanico/.vite/
+
 # Generated
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+run_dev.ps1
+build_app.ps1

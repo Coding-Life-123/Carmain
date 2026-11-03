@@ -224,6 +224,101 @@ void main() {
     expect(guardado.transmision.originalCodigo, 'W58');
     expect(guardado.transmision.fuente, FuenteComponente.swap);
   });
+
+  testWidgets('detección automática de swap al escribir motor no OEM',
+      (tester) async {
+    final api = _ApiClientFake();
+    final db = AppDatabase(NativeDatabase.memory());
+    final repo = VehiculoRepository(db);
+    addTearDown(db.close);
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        apiClientProvider.overrideWithValue(api),
+        repositoryProvider.overrideWithValue(repo),
+      ],
+      child: const MaterialApp(home: CrearVehiculoScreen()),
+    ));
+
+    // Llenar datos de chasis para disparar sugerencias de Corolla
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Marca *'), 'Toyota');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Modelo *'), 'Corolla');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Año *'), '2020');
+    await pumpBusqueda(tester);
+
+    // Por defecto se autollena MOTOR-A1 y el badge dice Motor original / OEM
+    expect(find.text('Motor original / OEM'), findsOneWidget);
+
+    // Escribir un motor no listado en sugerencias: 2JZ-GTE
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Código *').first, '2JZ-GTE');
+    await tester.pumpAndSettle();
+
+    // Se detecta automáticamente como swap
+    expect(find.text('Motor Swap detectado'), findsOneWidget);
+    expect(find.text('Original de fábrica: MOTOR-A1'), findsOneWidget);
+
+    // El selector de "Mantenimientos al día" está presente en creación
+    expect(find.text('Mantenimientos al día'), findsOneWidget);
+  });
+
+  testWidgets(
+      'modo edición de vehículo OEM: cambiar código de motor detecta swap y guarda código original',
+      (tester) async {
+    final api = _ApiClientFake();
+    final db = AppDatabase(NativeDatabase.memory());
+    final repo = VehiculoRepository(db);
+    addTearDown(db.close);
+
+    final vehiculoOem = Vehiculo(
+      id: 'v-oem-evolucion',
+      propietarioId: 'local',
+      marca: 'Honda',
+      modelo: 'Civic',
+      anio: 1998,
+      drivetrain: Drivetrain.fwd,
+      motor: const Motor(
+        codigo: 'D16Y8',
+        esOriginal: true,
+        fuente: FuenteComponente.oem,
+        tipoCombustible: TipoCombustible.gasolina,
+      ),
+      transmision: const Transmision(
+        codigo: 'S40',
+        esOriginal: true,
+        fuente: FuenteComponente.oem,
+        tipo: TipoTransmision.manual,
+      ),
+      kilometrajeActual: 140000,
+    );
+    await repo.saveVehiculo(vehiculoOem);
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        apiClientProvider.overrideWithValue(api),
+        repositoryProvider.overrideWithValue(repo),
+      ],
+      child: MaterialApp(
+        home: CrearVehiculoScreen(vehiculoExistente: vehiculoOem),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Arranca como OEM
+    expect(find.text('Motor original / OEM'), findsOneWidget);
+
+    // El dueño instala un B18C1 y actualiza el código en modo edición
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Código *').first, 'B18C1');
+    await tester.pumpAndSettle();
+
+    // Se detecta el swap comparando contra el motor OEM que tenía antes
+    expect(find.text('Motor Swap detectado'), findsOneWidget);
+    expect(find.text('Original de fábrica: D16Y8'), findsOneWidget);
+  });
 }
 
 /// ApiClient falso con sugerencias distintas por modelo, para verificar

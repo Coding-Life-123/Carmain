@@ -150,4 +150,43 @@ void main() {
     expect(plan.version, 1);
     expect(plan.fechaGeneracion, isNotNull);
   });
+
+  test('parsea alertasIngenieria y esVigilanciaSwap correctamente', () {
+    final data = _respuestaGo();
+    data['items'] = [
+      {
+        'id': 'swap-tapon',
+        'categoria': 'transmision',
+        'descripcion': 'Inspección de tapón magnético',
+        'componenteAplica': 'transmision',
+        'intervaloKm': 15000,
+        'esVigilanciaSwap': true,
+        'fuente': 'ia',
+        'confianza': 'alta',
+      },
+    ];
+    data['alertasIngenieria'] = [
+      {
+        'id': 'alerta-diff',
+        'vector': 'torqueDiferencial',
+        'severidad': 'alta',
+        'componenteAfectado': 'Diferencial y Semiejes',
+        'titulo': 'Sobrecarga de par torsional',
+        'diagnostico': 'El torque supera la capacidad OEM del diferencial.',
+        'recomendacionUpgrade': 'Instalar diferencial LSD reforzado.',
+      },
+    ];
+
+    final plan = parsearPlanDelServidor(data, vehiculoId: 'v-123');
+    expect(plan, isNotNull);
+    expect(plan!.items.first.esVigilanciaSwap, isTrue);
+    expect(plan.alertasIngenieria, hasLength(1));
+
+    final alerta = plan.alertasIngenieria.first;
+    expect(alerta.vector, VectorEstresSwap.torqueDiferencial);
+    expect(alerta.severidad, SeveridadIngenieria.alta);
+    expect(alerta.componenteAfectado, 'Diferencial y Semiejes');
+    expect(alerta.titulo, 'Sobrecarga de par torsional');
+    expect(alerta.recomendacionUpgrade, 'Instalar diferencial LSD reforzado.');
+  });
 }

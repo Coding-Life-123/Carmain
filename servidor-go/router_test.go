@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -142,5 +143,97 @@ func TestRateLimitATravesDelRouter(t *testing.T) {
 	// El health NO está rate-limited.
 	if w := pedirJSON(r, http.MethodGet, "/api/health", "", ""); w.Code != http.StatusOK {
 		t.Errorf("health debe seguir disponible tras agotar el límite, got %d", w.Code)
+	}
+}
+
+func TestSesionStoreAndForwardBuzon(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	r := nuevoRouter("secreta", seguridad.NewRateLimiter(60, time.Minute))
+
+	// 1. Dueño crea sesión con snapshot del vehículo y API key
+	reqCrear := `{"vehiculoId":"veh-123","duracionSegundos":3600,"snapshot":{"marca":"Honda","modelo":"Civic","swaps":true}}`
+	wCrear := pedirJSON(r, http.MethodPost, "/api/sesion", "secreta", reqCrear)
+	if wCrear.Code != http.StatusCreated {
+		t.Fatalf("crear sesión esperado 201, got %d: %s", wCrear.Code, wCrear.Body.String())
+	}
+
+	var resCrear struct {
+		Codigo string `json:"codigo"`
+	}
+	if err := json.Unmarshal(wCrear.Body.Bytes(), &resCrear); err != nil || resCrear.Codigo == "" {
+		t.Fatalf("no se obtuvo código de sesión válido: %s", wCrear.Body.String())
+	}
+	codigo := resCrear.Codigo
+
+	// 2. Mecánico consulta snapshot público SIN API key
+	wGetPublico := pedirJSON(r, http.MethodGet, "/api/sesion/"+codigo, "", "")
+	if wGetPublico.Code != http.StatusOK {
+		t.Fatalf("mecanico obtener snapshot esperado 200, got %d: %s", wGetPublico.Code, wGetPublico.Body.String())
+	}
+	if !strings.Contains(wGetPublico.Body.String(), `"Honda"`) {
+		t.Errorf("snapshot debe contener datos del auto: %s", wGetPublico.Body.String())
+	}
+
+	// 3. Mecánico envía propuesta de mantenimiento SIN API key
+	reqPropuesta := `{"mecanico":"Juan Perez","kilometraje":120000,"items":[{"itemId":"aceite_motor","estado":"realizado"}]}`
+	wPropuesta := pedirJSON(r, http.MethodPost, "/api/sesion/"+codigo+"/propuesta", "", reqPropuesta)
+	if wPropuesta.Code != http.StatusCreated {
+		t.Fatalf("mecanico enviar propuesta esperado 201, got %d: %s", wPropuesta.Code, wPropuesta.Body.String())
+	}
+
+	// 4. Dueño consulta propuestas sin API key: debe rebotar con 401
+	wPropuestasSinKey := pedirJSON(r, http.MethodGet, "/api/sesion/"+codigo+"/propuestas", "", "")
+	if wPropuestasSinKey.Code != http.StatusUnauthorized {
+		t.Errorf("obtener propuestas sin API key debe ser 401, got %d", wPropuestasSinKey.Code)
+	}
+
+	// 5. Dueño consulta propuestas con API key: debe ver la propuesta
+	wPropuestas := pedirJSON(r, http.MethodGet, "/api/sesion/"+codigo+"/propuestas", "secreta", "")
+	if wPropuestas.Code != http.StatusOK {
+		t.Fatalf("dueño obtener propuestas esperado 200, got %d: %s", wPropuestas.Code, wPropuestas.Body.String())
+	}
+	if !strings.Contains(wPropuestas.Body.String(), "Juan Perez") {
+		t.Errorf("propuestas debe contener al mecánico, got %s", wPropuestas.Body.String())
+	}
+
+	// 6. Dueño confirma propuestas: limpia el buzón
+	wConfirmar := pedirJSON(r, http.MethodPost, "/api/sesion/"+codigo+"/confirmar", "secreta", "")
+	if wConfirmar.Code != http.StatusOK {
+		t.Fatalf("confirmar propuestas esperado 200, got %d: %s", wConfirmar.Code, wConfirmar.Body.String())
+	}
+
+	// 7. Consulta subsecuente debe tener 0 propuestas pendientes
+	wPropuestasVacio := pedirJSON(r, http.MethodGet, "/api/sesion/"+codigo+"/propuestas", "secreta", "")
+	if wPropuestasVacio.Code != http.StatusOK {
+		t.Fatalf("obtener propuestas tras confirmar esperado 200, got %d", wPropuestasVacio.Code)
+	}
+	if strings.Contains(wPropuestasVacio.Body.String(), "Juan Perez") {
+		t.Errorf("el buzón debería estar vacío tras confirmar: %s", wPropuestasVacio.Body.String())
+	}
+
+	// 8. Código inexistente devuelve 404
+	wInvalido := pedirJSON(r, http.MethodGet, "/api/sesion/CODIGO_NO_EXISTE", "", "")
+	if wInvalido.Code != http.StatusNotFound {
+		t.Errorf("código inexistente esperado 404, got %d", wInvalido.Code)
+	}
+}
+
+func TestRutaWebMecanicoPublica(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	r := nuevoRouter("secreta", seguridad.NewRateLimiter(60, time.Minute))
+
+	// /m debe responder 200 sin API key
+	w := pedirJSON(r, http.MethodGet, "/m", "", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("/m esperado status 200, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "<title>CarMain · Ficha de Taller</title>") {
+		t.Errorf("html de /m no contiene título esperado")
+	}
+
+	// Ruta con parámetro ?s=token también debe responder 200
+	wToken := pedirJSON(r, http.MethodGet, "/m?s=1234567890abcdef", "", "")
+	if wToken.Code != http.StatusOK {
+		t.Fatalf("/m?s=... esperado status 200, got %d", wToken.Code)
 	}
 }

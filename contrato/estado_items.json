@@ -1,0 +1,68 @@
+[
+  {
+    "descripcion": "Sin registro previo con odómetro avanzado",
+    "kmActual": 50000,
+    "tipoUso": "normal",
+    "intervaloKm": 10000,
+    "intervaloMeses": 12,
+    "intervaloSeveroKm": 5000,
+    "ultimaVezKm": null,
+    "ultimaVezFecha": null,
+    "estadoEsperado": "desconocido"
+  },
+  {
+    "descripcion": "Vehículo nuevo en cero kilómetros",
+    "kmActual": 0,
+    "tipoUso": "normal",
+    "intervaloKm": 10000,
+    "intervaloMeses": 12,
+    "intervaloSeveroKm": 5000,
+    "ultimaVezKm": null,
+    "ultimaVezFecha": null,
+    "estadoEsperado": "ok"
+  },
+  {
+    "descripcion": "Servicio recién realizado",
+    "kmActual": 45000,
+    "tipoUso": "normal",
+    "intervaloKm": 10000,
+    "intervaloMeses": 12,
+    "intervaloSeveroKm": 5000,
+    "ultimaVezKm": 40000,
+    "ultimaVezFecha": "2026-01-01",
+    "estadoEsperado": "ok"
+  },
+  {
+    "descripcion": "Servicio dentro del umbral próximo (restan 1000 km de 10000)",
+    "kmActual": 49000,
+    "tipoUso": "normal",
+    "intervaloKm": 10000,
+    "intervaloMeses": 12,
+    "intervaloSeveroKm": 5000,
+    "ultimaVezKm": 40000,
+    "ultimaVezFecha": "2026-01-01",
+    "estadoEsperado": "proximo"
+  },
+  {
+    "descripcion": "Servicio con intervalo excedido por kilometraje",
+    "kmActual": 51000,
+    "tipoUso": "normal",
+    "intervaloKm": 10000,
+    "intervaloMeses": 12,
+    "intervaloSeveroKm": 5000,
+    "ultimaVezKm": 40000,
+    "ultimaVezFecha": "2026-01-01",
+    "estadoEsperado": "vencido"
+  },
+  {
+    "descripcion": "Uso severo reduce intervalo a la mitad",
+    "kmActual": 44500,
+    "tipoUso": "severo",
+    "intervaloKm": 10000,
+    "intervaloMeses": null,
+    "intervaloSeveroKm": 5000,
+    "ultimaVezKm": 40000,
+    "ultimaVezFecha": null,
+    "estadoEsperado": "proximo"
+  }
+]

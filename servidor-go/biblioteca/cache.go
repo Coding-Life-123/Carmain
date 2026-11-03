@@ -23,12 +23,22 @@ var cacheGlobal = &Cache{
 
 // generarClave produce una clave hash determinista para una configuración de vehículo.
 // Incluye todos los campos relevantes: marca, modelo, año, trim, drivetrain,
-// código de motor y código de transmisión.
+// código de motor, código de transmisión y especificidades de swap / torque.
 func generarClave(c shared.ConfigVehiculo) string {
-	raw := fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s",
-		c.Marca, c.Modelo, c.Anio, c.Trim, c.Drivetrain, c.MotorCodigo, c.TransCodigo)
+	raw := fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s|%t|%s|%t|%s|%s|%s|%d|%d",
+		c.Marca, c.Modelo, c.Anio, c.Trim, c.Drivetrain, c.MotorCodigo, c.TransCodigo,
+		c.MotorEsSwap, c.MotorOriginal, c.TransEsSwap, c.TransOriginal,
+		c.Combustible, c.Aspiracion,
+		valorInt(c.PotenciaHP), valorInt(c.TorqueNm))
 	h := sha256.Sum256([]byte(raw))
 	return fmt.Sprintf("%x", h)
+}
+
+func valorInt(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 // Get busca un plan en cache por configuración de vehículo.
