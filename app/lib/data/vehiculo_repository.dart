@@ -74,6 +74,16 @@ class VehiculoRepository {
     );
   }
 
+  /// Actualiza la ruta de la foto personalizada del vehículo.
+  Future<void> actualizarFotoVehiculo(String vehiculoId, String? fotoPath) async {
+    await (_db.vehiculos.update()..where((t) => t.id.equals(vehiculoId))).write(
+      VehiculosCompanion(
+        fotoPath: Value(fotoPath),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
   // ─────────────────────── Lecturas de Kilometraje ───────────────────────
 
   /// Registra una lectura periódica de kilometraje para proyectar km/día.
@@ -459,6 +469,7 @@ class VehiculoRepository {
       tipoUso: TipoUso.values[r.tipoUso],
       notasUso: r.notasUso,
       planMantenimientoId: r.planMantenimientoId,
+      fotoPath: r.fotoPath,
     );
   }
 
@@ -482,6 +493,7 @@ class VehiculoRepository {
       tipoUso: Value(v.tipoUso.index),
       notasUso: Value(v.notasUso),
       planMantenimientoId: Value(v.planMantenimientoId),
+      fotoPath: Value(v.fotoPath),
       updatedAt: Value(DateTime.now()),
     );
   }

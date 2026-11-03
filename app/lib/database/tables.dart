@@ -20,6 +20,7 @@ class Vehiculos extends Table {
   IntColumn get tipoUso => integer().withDefault(const Constant(0))();
   TextColumn get notasUso => text().nullable()();
   TextColumn get planMantenimientoId => text().nullable()();
+  TextColumn get fotoPath => text().nullable()();
   TextColumn get placa => text().nullable()();
   DateTimeColumn get fechaMatricula => dateTime().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();

@@ -329,7 +329,6 @@ class AnaliticaVehiculo {
     final estimacion = clasificarVehiculo(vehiculo);
     final double costoAnualBase = estimacion.costoBase(esSevero);
     final double kmReferencia = estimacion.kmReferencia(esSevero);
-    final nombreVehiculo = '${vehiculo.marca} ${vehiculo.modelo}';
 
     if (registros.isEmpty) {
       final itemsCriticos = plan?.items.where((i) {
@@ -350,11 +349,11 @@ class AnaliticaVehiculo {
         costoAnualEstimado =
             ((costoAnualBase / kmReferencia) * kmAnualReal).roundToDouble();
         explicacion =
-            'según ${estimacion.nombreSegmento} ($nombreVehiculo) y ritmo de ~${kmPorDia.toStringAsFixed(0)} km/día';
+            "estimado para uso ${esSevero ? 'severo' : 'normal'} (~${_formatearKm(kmReferencia.toInt())} km/año)";
       } else {
         costoAnualEstimado = costoAnualBase;
         explicacion =
-            'según ${estimacion.nombreSegmento} ($nombreVehiculo) y uso ${esSevero ? 'severo' : 'normal'} (~${_formatearKm(kmReferencia.toInt())} km/año)';
+            "estimado para uso ${esSevero ? 'severo' : 'normal'} (~${_formatearKm(kmReferencia.toInt())} km/año)";
       }
 
       return ResumenAnaliticaVehiculo(
@@ -442,8 +441,8 @@ class AnaliticaVehiculo {
           ((costoAnualBase / kmReferencia) * kmAnual).roundToDouble();
       esEstimadoSegunUso = true;
       explicacionCostoAnual = kmPorDia != null
-          ? 'según ${estimacion.nombreSegmento} ($nombreVehiculo) y ritmo de ~${kmPorDia.toStringAsFixed(0)} km/día'
-          : 'según ${estimacion.nombreSegmento} ($nombreVehiculo) y uso ${esSevero ? 'severo' : 'normal'} (~${_formatearKm(kmReferencia.toInt())} km/año)';
+          ? 'estimado a un ritmo de ~${kmPorDia.toStringAsFixed(0)} km/día'
+          : "estimado para uso ${esSevero ? 'severo' : 'normal'} (~${_formatearKm(kmReferencia.toInt())} km/año)";
     }
 
     // 4. Presupuesto estimado del próximo servicio

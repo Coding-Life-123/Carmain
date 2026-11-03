@@ -650,6 +650,7 @@ class _VehiculoCard extends ConsumerWidget {
                     tag: 'vehiculo-icono-${vehiculo.id}',
                     child: VehiculoAvatar(
                       marca: vehiculo.marca,
+                      vehiculo: vehiculo,
                       size: 58,
                       backgroundColor:
                           colorScheme.onPrimary.withValues(alpha: 0.15),

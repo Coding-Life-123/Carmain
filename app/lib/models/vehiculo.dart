@@ -31,6 +31,7 @@ abstract class Vehiculo with _$Vehiculo {
     @Default(TipoUso.normal) TipoUso tipoUso,
     String? notasUso,
     String? planMantenimientoId,
+    String? fotoPath,
   }) = _Vehiculo;
 
   factory Vehiculo.fromJson(Map<String, dynamic> json) =>

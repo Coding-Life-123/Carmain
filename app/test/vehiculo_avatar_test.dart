@@ -125,13 +125,21 @@ void main() {
       expect(detectarTipoSilueta(sprinter), TipoSiluetaVehiculo.van);
     });
 
-    test('clasifica SUVs / crossovers correctamente', () {
+    test('clasifica SUVs / crossovers correctamente incluyendo Toyota Sahara LC300 GXR', () {
+      final sahara = crearVehiculo(marca: 'Toyota', modelo: 'Sahara LC300', trim: 'GXR');
+      final saharaSimple = crearVehiculo(marca: 'Toyota', modelo: 'Sahara');
+      final lc200 = crearVehiculo(marca: 'Toyota', modelo: 'LC200', trim: 'VXR');
+      final pradoTxl = crearVehiculo(marca: 'Toyota', modelo: 'Land Cruiser Prado', trim: 'TXL');
       final prado = crearVehiculo(marca: 'Toyota', modelo: 'Land Cruiser Prado');
       final cx30 = crearVehiculo(marca: 'Mazda', modelo: 'CX-30 Grand Touring');
       final tracker = crearVehiculo(marca: 'Chevrolet', modelo: 'Tracker Premier');
       final duster = crearVehiculo(marca: 'Renault', modelo: 'Duster Iconic');
       final wrangler = crearVehiculo(marca: 'Jeep', modelo: 'Wrangler Rubicon');
 
+      expect(detectarTipoSilueta(sahara), TipoSiluetaVehiculo.suv);
+      expect(detectarTipoSilueta(saharaSimple), TipoSiluetaVehiculo.suv);
+      expect(detectarTipoSilueta(lc200), TipoSiluetaVehiculo.suv);
+      expect(detectarTipoSilueta(pradoTxl), TipoSiluetaVehiculo.suv);
       expect(detectarTipoSilueta(prado), TipoSiluetaVehiculo.suv);
       expect(detectarTipoSilueta(cx30), TipoSiluetaVehiculo.suv);
       expect(detectarTipoSilueta(tracker), TipoSiluetaVehiculo.suv);

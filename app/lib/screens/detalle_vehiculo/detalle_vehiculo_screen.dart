@@ -1,3 +1,7 @@
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -141,13 +145,13 @@ class DetalleVehiculoScreen extends ConsumerWidget {
 
 // ─────────────────────────── Sección 1: Info del vehículo ───────────────────────────
 
-class _SeccionInfoVehiculo extends StatelessWidget {
+class _SeccionInfoVehiculo extends ConsumerWidget {
   const _SeccionInfoVehiculo({required this.vehiculo});
 
   final Vehiculo vehiculo;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final motor = vehiculo.motor;
@@ -178,14 +182,45 @@ class _SeccionInfoVehiculo extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Logo oficial de la marca
-                Hero(
-                  tag: 'vehiculo-icono-${vehiculo.id}',
-                  child: VehiculoAvatar(
-                    marca: vehiculo.marca,
-                    size: 58,
-                    backgroundColor: cs.primaryContainer.withValues(alpha: 0.5),
-                  ),
+                // Logo oficial de la marca o foto personalizada con botón de captura
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    InkWell(
+                      onTap: () => _mostrarOpcionesFoto(context, ref, vehiculo),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Hero(
+                        tag: 'vehiculo-icono-${vehiculo.id}',
+                        child: VehiculoAvatar(
+                          marca: vehiculo.marca,
+                          vehiculo: vehiculo,
+                          size: 64,
+                          backgroundColor: cs.primaryContainer.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: -4,
+                      right: -4,
+                      child: Material(
+                        color: cs.primary,
+                        shape: const CircleBorder(),
+                        elevation: 2,
+                        child: InkWell(
+                          onTap: () => _mostrarOpcionesFoto(context, ref, vehiculo),
+                          customBorder: const CircleBorder(),
+                          child: Padding(
+                            padding: const EdgeInsets.all(5),
+                            child: Icon(
+                              Icons.camera_alt,
+                              size: 14,
+                              color: cs.onPrimary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -300,6 +335,153 @@ class _SeccionInfoVehiculo extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _mostrarOpcionesFoto(
+    BuildContext context,
+    WidgetRef ref,
+    Vehiculo vehiculo,
+  ) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final tieneFoto = vehiculo.fotoPath != null && vehiculo.fotoPath!.isNotEmpty;
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (bottomSheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Foto del vehículo',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Personaliza la imagen de tu ${vehiculo.marca} ${vehiculo.modelo} con una foto real.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_outlined),
+                  title: const Text('Tomar foto con la cámara'),
+                  onTap: () {
+                    Navigator.pop(bottomSheetContext);
+                    _cambiarFoto(context, ref, vehiculo, ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Elegir foto de la galería'),
+                  onTap: () {
+                    Navigator.pop(bottomSheetContext);
+                    _cambiarFoto(context, ref, vehiculo, ImageSource.gallery);
+                  },
+                ),
+                if (tieneFoto) ...[
+                  const Divider(),
+                  ListTile(
+                    leading: Icon(Icons.delete_outline, color: cs.error),
+                    title: Text(
+                      'Eliminar foto',
+                      style: TextStyle(color: cs.error),
+                    ),
+                    onTap: () {
+                      Navigator.pop(bottomSheetContext);
+                      _eliminarFoto(context, ref, vehiculo);
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _cambiarFoto(
+    BuildContext context,
+    WidgetRef ref,
+    Vehiculo vehiculo,
+    ImageSource source,
+  ) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: 1280,
+        maxHeight: 960,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+
+      final appDir = await getApplicationDocumentsDirectory();
+      final fotosDir = Directory(p.join(appDir.path, 'vehiculos_fotos'));
+      if (!await fotosDir.exists()) {
+        await fotosDir.create(recursive: true);
+      }
+
+      final ext = p.extension(picked.path).isEmpty ? '.jpg' : p.extension(picked.path);
+      final fileName = '${vehiculo.id}_${DateTime.now().millisecondsSinceEpoch}$ext';
+      final targetPath = p.join(fotosDir.path, fileName);
+
+      final savedFile = await File(picked.path).copy(targetPath);
+
+      // Si existía foto anterior, limpiarla para ahorrar almacenamiento
+      if (vehiculo.fotoPath != null && vehiculo.fotoPath != savedFile.path) {
+        try {
+          final fAnt = File(vehiculo.fotoPath!);
+          if (await fAnt.exists()) await fAnt.delete();
+        } catch (_) {}
+      }
+
+      await ref.read(repositoryProvider).actualizarFotoVehiculo(vehiculo.id, savedFile.path);
+      ref.invalidate(vehiculosProvider);
+      ref.invalidate(vehiculoProvider(vehiculo.id));
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Foto del vehículo guardada con éxito')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo procesar la foto: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _eliminarFoto(
+    BuildContext context,
+    WidgetRef ref,
+    Vehiculo vehiculo,
+  ) async {
+    if (vehiculo.fotoPath != null) {
+      try {
+        final f = File(vehiculo.fotoPath!);
+        if (await f.exists()) await f.delete();
+      } catch (_) {}
+    }
+    await ref.read(repositoryProvider).actualizarFotoVehiculo(vehiculo.id, null);
+    ref.invalidate(vehiculosProvider);
+    ref.invalidate(vehiculoProvider(vehiculo.id));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto eliminada. Se mostrará el logo oficial.')),
+      );
+    }
   }
 }
 

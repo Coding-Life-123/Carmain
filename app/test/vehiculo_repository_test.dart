@@ -635,7 +635,8 @@ void main() {
       expect(resF450.segmentoVehiculo, SegmentoVehiculo.pesadoHeavyDuty);
       expect(resF450.costoAnualEstimado, 14500000.0);
       expect(resF450.esEstimadoSegunUso, isTrue);
-      expect(resF450.explicacionCostoAnual, contains('Heavy Duty'));
+      expect(resF450.explicacionCostoAnual, contains('estimado'));
+      expect(resF450.explicacionCostoAnual, isNot(contains('Heavy Duty')));
       expect(resF450.explicacionCostoAnual, contains('severo'));
 
       // 2. Ford F-450 en uso normal

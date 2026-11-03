@@ -28,7 +28,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -48,6 +48,9 @@ class AppDatabase extends _$AppDatabase {
           if (from < 4) {
             await m.createTable(propuestasRecibidas);
             await m.addColumn(sesionesMecanico, sesionesMecanico.tokenLargo);
+          }
+          if (from < 5) {
+            await m.addColumn(vehiculos, vehiculos.fotoPath);
           }
         },
       );
