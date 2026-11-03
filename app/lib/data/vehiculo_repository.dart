@@ -224,11 +224,11 @@ class VehiculoRepository {
         });
 
         if (realizado) {
-          if (maxKm == null || reg.kilometraje > maxKm!) {
+          if (maxKm == null || reg.kilometraje > maxKm) {
             maxKm = reg.kilometraje;
             maxFecha = reg.fecha;
           } else if (reg.kilometraje == maxKm &&
-              (maxFecha == null || reg.fecha.isAfter(maxFecha!))) {
+              (maxFecha == null || reg.fecha.isAfter(maxFecha))) {
             maxFecha = reg.fecha;
           }
         }

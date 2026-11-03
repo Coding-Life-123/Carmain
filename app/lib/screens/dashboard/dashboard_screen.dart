@@ -61,11 +61,7 @@ class DashboardScreen extends ConsumerWidget {
                 : 'Sin conexión con el servidor',
             onPressed: () => ref.invalidate(conexionServidorProvider),
           ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Configuración',
-            onPressed: () => _mostrarAjustes(context),
-          ),
+
         ],
       ),
       body: vehiculosAsync.when(
@@ -164,90 +160,14 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  void _mostrarAjustes(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) {
-        return const _AjustesSheet();
-      },
-    );
-  }
-
   String _mensajeError(Object error) {
     return 'No se pudieron cargar los vehículos.\n${error.toString()}';
   }
 }
 
-/// Panel de ajustes: muestra la URL del backend configurada y permite
-/// editarla (se persiste con shared_preferences).
-class _AjustesSheet extends ConsumerWidget {
-  const _AjustesSheet();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final url = ref.watch(servidorUrlProvider);
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.directions_car, color: colorScheme.secondary),
-                const SizedBox(width: 10),
-                Text(
-                  'CarMain v1.0.0',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.dns_outlined),
-              title: const Text('Servidor Backend'),
-              subtitle: Text(url),
-              trailing: const Icon(Icons.edit_outlined, size: 20),
-              onTap: () => _editarUrl(context, ref),
-            ),
-            const ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.storage_outlined),
-              title: Text('Base de datos'),
-              subtitle: Text('Local-first (Drift / SQLite)'),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cerrar'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _editarUrl(BuildContext context, WidgetRef ref) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => EditarServidorDialog(
-        initialUrl: ref.read(servidorUrlProvider),
-        initialApiKey: ref.read(servidorApiKeyProvider),
-      ),
-    );
-  }
-}
-
 /// Diálogo de edición del servidor: URL + API key + probe de conexión.
+/// Disponible para tests (@visibleForTesting). No expuesto en la UI del usuario.
+@visibleForTesting
 /// Interno de la pantalla de ajustes (público para poder testearlo).
 ///
 /// Es un StatefulWidget (no un StatefulBuilder suelto con dispose manual
