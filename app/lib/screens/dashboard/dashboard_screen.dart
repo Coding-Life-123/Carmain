@@ -51,7 +51,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.directions_car_rounded, color: colorScheme.secondary),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/images/logo_square.png',
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
+              ),
+            ),
             const SizedBox(width: 10),
             const Text('CarMain'),
           ],
@@ -891,16 +899,22 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 140,
-              height: 140,
+              width: 130,
+              height: 130,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: colorScheme.secondaryContainer.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 18,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-              child: Icon(
-                Icons.directions_car_rounded,
-                size: 72,
-                color: colorScheme.secondary,
+              clipBehavior: Clip.antiAlias,
+              child: Image.asset(
+                'assets/images/logo_square.png',
+                fit: BoxFit.cover,
               ),
             ),
             const SizedBox(height: 24),
