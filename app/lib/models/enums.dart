@@ -102,7 +102,11 @@ enum FuentePlan {
 
   /// Viaja como 'ia' en JSON — contrato con el backend Go.
   @JsonValue('ia')
-  iaInferida('IA');
+  iaInferida('IA'),
+
+  /// Servicio o plan incorporado directamente desde la propuesta de un taller.
+  @JsonValue('taller')
+  taller('Taller');
 
   const FuentePlan(this.label);
   final String label;

@@ -3,9 +3,11 @@ import 'package:car_main/database/database.dart';
 import 'package:car_main/models/componente.dart';
 import 'package:car_main/models/enums.dart';
 import 'package:car_main/models/plan_mantenimiento.dart';
+import 'package:car_main/models/propuesta_mecanico.dart';
 import 'package:car_main/models/registro_mantenimiento.dart';
 import 'package:car_main/models/vehiculo.dart';
 import 'package:car_main/providers/providers.dart';
+import 'package:car_main/services/api_client.dart';
 import 'package:car_main/utils/analitica_vehiculo.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -342,6 +344,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           repositoryProvider.overrideWithValue(repo),
+          apiClientProvider.overrideWithValue(_ApiClientTestFake()),
         ],
       );
       addTearDown(container.dispose);
@@ -364,6 +367,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           repositoryProvider.overrideWithValue(repo),
+          apiClientProvider.overrideWithValue(_ApiClientTestFake()),
         ],
       );
       addTearDown(container.dispose);
@@ -379,6 +383,30 @@ void main() {
         expect(item.ultimaVezKm, isNull);
         expect(item.ultimaVezFecha, isNull);
       }
+    });
+
+    test('fast-path: salta llamada al backend cuando conexionServidorProvider es false',
+        () async {
+      var intentoLlamarAlBackend = false;
+      final container = ProviderContainer(
+        overrides: [
+          repositoryProvider.overrideWithValue(repo),
+          conexionServidorProvider.overrideWith((ref) => false),
+          apiClientProvider.overrideWithValue(_ApiClientLlamadaDetector(() {
+            intentoLlamarAlBackend = true;
+          })),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final v = _vehiculo(id: 'v-fast-path').copyWith(kilometrajeActual: 30000);
+      await container.read(crearVehiculoProvider((v, true)).future);
+
+      expect(intentoLlamarAlBackend, isFalse,
+          reason: 'No debe llamar a la red si el servidor ya está reportado offline');
+      final plan = await repo.getPlan(v.id);
+      expect(plan, isNotNull);
+      expect(plan!.items, isNotEmpty);
     });
   });
 
@@ -717,6 +745,131 @@ void main() {
       expect(resSupra.costoAnualEstimado, 5800000.0);
     });
   });
+
+  group('aceptarPropuesta e integracion de items adicionales al plan permanente', () {
+    test('aceptarPropuesta basica actualiza odometro, estado y recalcula progreso',
+        () async {
+      final v = _vehiculo(id: 'v-prop-1').copyWith(kilometrajeActual: 50000);
+      await repo.saveVehiculo(v);
+      final p = _plan(v.id);
+      await repo.savePlan(p);
+
+      final propuesta = PropuestaMecanicoModel(
+        id: 'prop-1',
+        sesionId: 'ses-1',
+        vehiculoId: v.id,
+        creadaEn: DateTime(2026, 3, 20),
+        recibidaEn: DateTime(2026, 3, 20),
+        kilometraje: 52000,
+        fecha: '2026-03-20',
+        taller: 'Taller Especializado',
+        mecanicoNombre: 'Carlos',
+        itemsRealizados: const [
+          PropuestaItemModel(
+            itemId: 'item-1',
+            categoria: CategoriaMantenimiento.motor,
+            componenteAplica: TipoComponente.motor,
+            descripcion: 'Cambio de aceite',
+          ),
+        ],
+      );
+
+      await repo.savePropuestaRecibida(propuesta);
+      await repo.aceptarPropuesta(propuesta);
+
+      // 1. Odómetro del vehículo actualizado
+      final vActualizado = await repo.getVehiculo(v.id);
+      expect(vActualizado!.kilometrajeActual, 52000);
+
+      // 2. Estado de la propuesta marcado como aceptada
+      final pendientes = await repo.getPropuestasPendientes(v.id);
+      expect(pendientes, isEmpty);
+
+      // 3. Plan recalculado con el nuevo kilometraje de última vez
+      final planActualizado = await repo.getPlan(v.id);
+      final itemAceite = planActualizado!.items.firstWhere((i) => i.id == 'item-1');
+      expect(itemAceite.ultimaVezKm, 52000);
+      expect(itemAceite.ultimaVezFecha, DateTime(2026, 3, 20));
+    });
+
+    test(
+        'incorporar item adicional agrega al plan con fuente taller y actualiza progreso',
+        () async {
+      final v = _vehiculo(id: 'v-prop-2').copyWith(kilometrajeActual: 60000);
+      await repo.saveVehiculo(v);
+      final p = _plan(v.id);
+      await repo.savePlan(p);
+
+      const nuevoItemId = 'item-frenos-dot4';
+      final itemAdicionalPlan = ItemMantenimiento(
+        id: nuevoItemId,
+        categoria: CategoriaMantenimiento.frenos,
+        descripcion: 'Cambio de líquido de frenos DOT 4',
+        componenteAplica: TipoComponente.frenos,
+        intervaloKm: 20000,
+        intervaloMeses: 24,
+        fuente: FuentePlan.taller,
+        confianza: NivelConfianza.alta,
+      );
+
+      final propuesta = PropuestaMecanicoModel(
+        id: 'prop-2',
+        sesionId: 'ses-2',
+        vehiculoId: v.id,
+        creadaEn: DateTime(2026, 4, 10),
+        recibidaEn: DateTime(2026, 4, 10),
+        kilometraje: 65000,
+        fecha: '2026-04-10',
+        taller: 'Frenos y Más',
+        itemsRealizados: const [
+          PropuestaItemModel(
+            itemId: 'item-1',
+            categoria: CategoriaMantenimiento.motor,
+            componenteAplica: TipoComponente.motor,
+            descripcion: 'Cambio de aceite',
+          ),
+          PropuestaItemModel(
+            itemId: null,
+            categoria: CategoriaMantenimiento.frenos,
+            componenteAplica: TipoComponente.frenos,
+            descripcion: 'Cambio de líquido de frenos DOT 4',
+          ),
+        ],
+      );
+
+      await repo.savePropuestaRecibida(propuesta);
+      await repo.aceptarPropuesta(
+        propuesta,
+        itemsAIncorporar: [itemAdicionalPlan],
+      );
+
+      // 1. El plan ahora tiene 2 ítems (el original + el incorporado)
+      final planActualizado = await repo.getPlan(v.id);
+      expect(planActualizado, isNotNull);
+      expect(planActualizado!.items.length, 2);
+
+      // 2. El nuevo ítem está en el plan permanente con fuente taller y confianza alta
+      final itemFrenos =
+          planActualizado.items.firstWhere((i) => i.id == nuevoItemId);
+      expect(itemFrenos.categoria, CategoriaMantenimiento.frenos);
+      expect(itemFrenos.intervaloKm, 20000);
+      expect(itemFrenos.intervaloMeses, 24);
+      expect(itemFrenos.fuente, FuentePlan.taller);
+      expect(itemFrenos.confianza, NivelConfianza.alta);
+
+      // 3. Progreso recalculado a 65.000 km y fecha 2026-04-10
+      expect(itemFrenos.ultimaVezKm, 65000);
+      expect(itemFrenos.ultimaVezFecha, DateTime(2026, 4, 10));
+
+      // 4. El registro guardado en la base de datos vinculó el nuevo itemId
+      final registros = await repo.getRegistros(v.id);
+      expect(registros, isNotEmpty);
+      final reg = registros.first;
+      final regItemFrenos = reg.itemsRealizados
+          .firstWhere((i) => i.categoria == CategoriaMantenimiento.frenos);
+      expect(regItemFrenos.itemId, nuevoItemId);
+    });
+  });
 }
 
 // ─────────────────────────── Fixtures ───────────────────────────
@@ -773,3 +926,30 @@ RegistroMantenimiento _registro(String vehiculoId) => RegistroMantenimiento(
         ),
       ],
     );
+
+class _ApiClientTestFake extends ApiClient {
+  _ApiClientTestFake() : super(baseUrl: 'http://localhost:8080');
+
+  @override
+  Future<PlanMantenimiento?> solicitarPlan(
+    Vehiculo vehiculo, {
+    Duration? receiveTimeout,
+  }) async {
+    return null;
+  }
+}
+
+class _ApiClientLlamadaDetector extends ApiClient {
+  final void Function() onLlamada;
+  _ApiClientLlamadaDetector(this.onLlamada)
+      : super(baseUrl: 'http://localhost:8080');
+
+  @override
+  Future<PlanMantenimiento?> solicitarPlan(
+    Vehiculo vehiculo, {
+    Duration? receiveTimeout,
+  }) async {
+    onLlamada();
+    return null;
+  }
+}

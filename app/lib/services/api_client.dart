@@ -22,11 +22,12 @@ class ApiClient {
   ApiClient({
     String baseUrl = 'http://localhost:8080',
     String? apiKey,
+    Duration connectTimeout = const Duration(seconds: 4),
     HttpClientAdapter? adapter,
   })  : _apiKey = (apiKey == null || apiKey.isEmpty) ? null : apiKey,
         _dio = Dio(BaseOptions(
           baseUrl: baseUrl,
-          connectTimeout: const Duration(seconds: 10),
+          connectTimeout: connectTimeout,
           // El servidor puede tardar hasta 60s investigando con Gemini +
           // búsqueda web (su propio timeout). Si esto fuera menor, la app
           // abortaría la conexión mientras el servidor completa la
@@ -92,8 +93,16 @@ class ApiClient {
   ///
   /// El plan del servidor viene indexado por configuración (sin
   /// `vehiculoId`); se asocia al vehículo acá, al parsear.
-  Future<PlanMantenimiento?> solicitarPlan(Vehiculo vehiculo) async {
-    final response = await _dio.get('/api/plan', queryParameters: {
+  Future<PlanMantenimiento?> solicitarPlan(
+    Vehiculo vehiculo, {
+    Duration? receiveTimeout,
+  }) async {
+    final response = await _dio.get(
+      '/api/plan',
+      options: receiveTimeout != null
+          ? Options(receiveTimeout: receiveTimeout)
+          : null,
+      queryParameters: {
       'marca': vehiculo.marca,
       'modelo': vehiculo.modelo,
       'anio': vehiculo.anio,

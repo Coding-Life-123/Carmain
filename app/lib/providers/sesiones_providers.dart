@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/database.dart';
+import '../models/plan_mantenimiento.dart';
 import '../models/propuesta_mecanico.dart';
 import 'providers.dart';
 
@@ -52,18 +53,43 @@ final sincronizarPropuestasRemotasProvider =
   return nuevas;
 });
 
+/// Parámetros para aceptar una propuesta de taller.
+class AceptarPropuestaArgs {
+  final PropuestaMecanicoModel propuesta;
+  final List<ItemMantenimiento> itemsAIncorporar;
+
+  const AceptarPropuestaArgs({
+    required this.propuesta,
+    this.itemsAIncorporar = const [],
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AceptarPropuestaArgs &&
+          runtimeType == other.runtimeType &&
+          propuesta.id == other.propuesta.id &&
+          itemsAIncorporar.length == other.itemsAIncorporar.length;
+
+  @override
+  int get hashCode => Object.hash(propuesta.id, itemsAIncorporar.length);
+}
+
 /// Acepta una propuesta de taller y genera el registro en el historial.
 final aceptarPropuestaProvider =
-    FutureProvider.family<void, PropuestaMecanicoModel>((ref, propuesta) async {
+    FutureProvider.family<void, AceptarPropuestaArgs>((ref, args) async {
   final repo = ref.read(repositoryProvider);
-  await repo.aceptarPropuesta(propuesta);
+  await repo.aceptarPropuesta(
+    args.propuesta,
+    itemsAIncorporar: args.itemsAIncorporar,
+  );
 
-  ref.invalidate(propuestasPendientesProvider(propuesta.vehiculoId));
-  ref.invalidate(registrosProvider(propuesta.vehiculoId));
-  ref.invalidate(planProvider(propuesta.vehiculoId));
-  ref.invalidate(vehiculoProvider(propuesta.vehiculoId));
-  ref.invalidate(kmPorDiaProvider(propuesta.vehiculoId));
-  ref.invalidate(analiticaVehiculoProvider(propuesta.vehiculoId));
+  ref.invalidate(propuestasPendientesProvider(args.propuesta.vehiculoId));
+  ref.invalidate(registrosProvider(args.propuesta.vehiculoId));
+  ref.invalidate(planProvider(args.propuesta.vehiculoId));
+  ref.invalidate(vehiculoProvider(args.propuesta.vehiculoId));
+  ref.invalidate(kmPorDiaProvider(args.propuesta.vehiculoId));
+  ref.invalidate(analiticaVehiculoProvider(args.propuesta.vehiculoId));
   ref.invalidate(vehiculosProvider);
 });
 

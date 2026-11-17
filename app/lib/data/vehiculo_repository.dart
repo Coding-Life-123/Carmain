@@ -363,14 +363,59 @@ class VehiculoRepository {
   }
 
   /// Acepta una propuesta de taller: crea un RegistroMantenimiento con nivel
-  /// selladoTaller, actualiza el odómetro, recalcula el plan y marca la propuesta como aceptada.
-  Future<void> aceptarPropuesta(PropuestaMecanicoModel propuesta) async {
+  /// selladoTaller, actualiza el odómetro, incorpora ítems adicionales al plan
+  /// permanente (si se especifican), recalcula el plan y marca la propuesta como aceptada.
+  Future<void> aceptarPropuesta(
+    PropuestaMecanicoModel propuesta, {
+    List<ItemMantenimiento> itemsAIncorporar = const [],
+  }) async {
     DateTime fechaRegistro;
     try {
       fechaRegistro = DateTime.parse(propuesta.fecha);
     } catch (_) {
       fechaRegistro = DateTime.now();
     }
+
+    // 1. Incorporar nuevos ítems adicionales al plan permanente del vehículo
+    if (itemsAIncorporar.isNotEmpty) {
+      final planActual = await getPlan(propuesta.vehiculoId);
+      if (planActual != null) {
+        final idsExistentes = planActual.items.map((i) => i.id).toSet();
+        final nuevosUnicos = itemsAIncorporar
+            .where((i) => !idsExistentes.contains(i.id))
+            .toList();
+        if (nuevosUnicos.isNotEmpty) {
+          final planActualizado = planActual.copyWith(
+            items: [...planActual.items, ...nuevosUnicos],
+          );
+          await savePlan(planActualizado);
+        }
+      }
+    }
+
+    // 2. Asociar el itemId a los ítems realizados incorporados
+    final itemsRealizados = propuesta.itemsRealizados.map((i) {
+      String? itemId = i.itemId;
+      if (itemId == null && itemsAIncorporar.isNotEmpty) {
+        final encontrado = itemsAIncorporar.cast<ItemMantenimiento?>().firstWhere(
+              (nuevo) =>
+                  nuevo?.categoria == i.categoria &&
+                  nuevo?.componenteAplica == i.componenteAplica &&
+                  nuevo?.descripcion.trim().toLowerCase() ==
+                      i.descripcion.trim().toLowerCase(),
+              orElse: () => null,
+            );
+        if (encontrado != null) {
+          itemId = encontrado.id;
+        }
+      }
+      return ItemRealizado(
+        itemId: itemId,
+        categoria: i.categoria,
+        componenteAplica: i.componenteAplica,
+        descripcion: i.descripcion,
+      );
+    }).toList();
 
     final registro = RegistroMantenimiento(
       id: newId(),
@@ -382,14 +427,7 @@ class VehiculoRepository {
       taller: propuesta.taller ?? propuesta.mecanicoNombre ?? 'Taller mecánico',
       sesionTallerId: propuesta.sesionId,
       notas: propuesta.notas,
-      itemsRealizados: propuesta.itemsRealizados.map((i) {
-        return ItemRealizado(
-          itemId: i.itemId,
-          categoria: i.categoria,
-          componenteAplica: i.componenteAplica,
-          descripcion: i.descripcion,
-        );
-      }).toList(),
+      itemsRealizados: itemsRealizados,
     );
 
     await saveRegistro(registro);

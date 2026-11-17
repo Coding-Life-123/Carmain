@@ -281,11 +281,18 @@ final crearVehiculoProvider =
   await repo.saveVehiculo(vehiculo);
 
   // 2. Solicitar el plan al backend (biblioteca central + IA).
+  // Si el probe ya determinó que no hay conexión, saltamos directamente al plan local (fast-path).
   PlanMantenimiento? plan;
-  try {
-    plan = await api.solicitarPlan(vehiculo);
-  } catch (e) {
-    debugPrint('[crearVehiculoProvider] Backend no disponible ($e). Generando plan base local.');
+  final conexion = ref.read(conexionServidorProvider);
+  final servidorDesconectado = conexion.asData?.value == false;
+  if (!servidorDesconectado) {
+    try {
+      plan = await api.solicitarPlan(vehiculo);
+    } catch (e) {
+      debugPrint('[crearVehiculoProvider] Backend no disponible ($e). Generando plan base local.');
+    }
+  } else {
+    debugPrint('[crearVehiculoProvider] Backend desconectado según probe. Usando plan base local directamente.');
   }
 
   // 3. Fallback: Si el backend no está disponible o no respondió, usar plan base local.
@@ -355,11 +362,18 @@ final actualizarVehiculoProvider =
   // 2. Re-solicitar el plan solo si la configuración técnica cambió.
   if (configCambio) {
     PlanMantenimiento? plan;
-    try {
-      plan = await api.solicitarPlan(vehiculo);
-    } catch (e) {
+    final conexion = ref.read(conexionServidorProvider);
+    final servidorDesconectado = conexion.asData?.value == false;
+    if (!servidorDesconectado) {
+      try {
+        plan = await api.solicitarPlan(vehiculo);
+      } catch (e) {
+        debugPrint(
+            '[actualizarVehiculoProvider] Backend no disponible ($e). Generando plan base local.');
+      }
+    } else {
       debugPrint(
-          '[actualizarVehiculoProvider] Backend no disponible ($e). Generando plan base local.');
+          '[actualizarVehiculoProvider] Backend desconectado según probe. Usando plan base local directamente.');
     }
     plan ??= _generarPlanBaseLocal(vehiculo);
 

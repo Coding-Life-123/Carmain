@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/vehiculo_repository.dart';
+import '../../models/enums.dart';
+import '../../models/plan_mantenimiento.dart';
 import '../../models/propuesta_mecanico.dart';
 import '../../models/vehiculo.dart';
 import '../../providers/sesiones_providers.dart';
@@ -25,13 +29,106 @@ class RevisarPropuestaScreen extends ConsumerStatefulWidget {
       _RevisarPropuestaScreenState();
 }
 
+(int km, int meses) _intervaloRecomendado(CategoriaMantenimiento cat) {
+  return switch (cat) {
+    CategoriaMantenimiento.motor => (10000, 12),
+    CategoriaMantenimiento.frenos => (20000, 24),
+    CategoriaMantenimiento.transmision => (40000, 24),
+    CategoriaMantenimiento.diferencial => (40000, 24),
+    CategoriaMantenimiento.refrigeracion => (40000, 24),
+    CategoriaMantenimiento.suspension => (30000, 24),
+    CategoriaMantenimiento.neumaticos => (10000, 12),
+    CategoriaMantenimiento.electrico => (30000, 24),
+    CategoriaMantenimiento.escape => (50000, 36),
+    CategoriaMantenimiento.inspeccion => (10000, 12),
+  };
+}
+
+class _ConfigItemAdicional {
+  bool incorporar = false;
+  int intervaloKm;
+  int intervaloMeses;
+  final TextEditingController kmController;
+  final TextEditingController mesesController;
+
+  _ConfigItemAdicional({
+    required this.intervaloKm,
+    required this.intervaloMeses,
+  })  : kmController = TextEditingController(text: intervaloKm.toString()),
+        mesesController = TextEditingController(text: intervaloMeses.toString());
+
+  void dispose() {
+    kmController.dispose();
+    mesesController.dispose();
+  }
+}
+
 class _RevisarPropuestaScreenState extends ConsumerState<RevisarPropuestaScreen> {
   bool _procesando = false;
+  final Map<int, _ConfigItemAdicional> _adicionalesConfig = {};
+
+  @override
+  void initState() {
+    super.initState();
+    for (var i = 0; i < widget.propuesta.itemsRealizados.length; i++) {
+      final item = widget.propuesta.itemsRealizados[i];
+      if (item.itemId == null) {
+        final (km, meses) = _intervaloRecomendado(item.categoria);
+        _adicionalesConfig[i] = _ConfigItemAdicional(
+          intervaloKm: km,
+          intervaloMeses: meses,
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final cfg in _adicionalesConfig.values) {
+      cfg.dispose();
+    }
+    super.dispose();
+  }
 
   Future<void> _aceptar() async {
     setState(() => _procesando = true);
     try {
-      await ref.read(aceptarPropuestaProvider(widget.propuesta).future);
+      final fechaPropuesta =
+          DateTime.tryParse(widget.propuesta.fecha) ?? DateTime.now();
+      final nuevosItems = <ItemMantenimiento>[];
+
+      for (var i = 0; i < widget.propuesta.itemsRealizados.length; i++) {
+        final cfg = _adicionalesConfig[i];
+        if (cfg != null && cfg.incorporar) {
+          final itemPropuesta = widget.propuesta.itemsRealizados[i];
+          final km = int.tryParse(
+                  cfg.kmController.text.replaceAll(RegExp(r'\D'), '')) ??
+              cfg.intervaloKm;
+          final meses = int.tryParse(
+                  cfg.mesesController.text.replaceAll(RegExp(r'\D'), '')) ??
+              cfg.intervaloMeses;
+
+          nuevosItems.add(ItemMantenimiento(
+            id: VehiculoRepository.newId(),
+            categoria: itemPropuesta.categoria,
+            descripcion: itemPropuesta.descripcion,
+            componenteAplica: itemPropuesta.componenteAplica,
+            intervaloKm: km > 0 ? km : 10000,
+            intervaloMeses: meses > 0 ? meses : null,
+            ultimaVezKm: widget.propuesta.kilometraje,
+            ultimaVezFecha: fechaPropuesta,
+            fuente: FuentePlan.taller,
+            confianza: NivelConfianza.alta,
+          ));
+        }
+      }
+
+      await ref.read(aceptarPropuestaProvider(
+        AceptarPropuestaArgs(
+          propuesta: widget.propuesta,
+          itemsAIncorporar: nuevosItems,
+        ),
+      ).future);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -275,41 +372,179 @@ class _RevisarPropuestaScreenState extends ConsumerState<RevisarPropuestaScreen>
             ),
           ),
           const SizedBox(height: 8),
-          for (final item in propuesta.itemsRealizados)
-            Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: Icon(
-                  item.itemId != null
-                      ? Icons.check_circle_outline
-                      : Icons.add_circle_outline,
-                  color: cs.primary,
-                ),
-                title: Text(
-                  item.descripcion,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  '${item.categoria.label} · ${item.componenteAplica.label}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
+          for (var i = 0; i < propuesta.itemsRealizados.length; i++) ...[
+            Builder(builder: (context) {
+              final item = propuesta.itemsRealizados[i];
+              final esAdicional = item.itemId == null;
+              final cfg = _adicionalesConfig[i];
+
+              if (!esAdicional || cfg == null) {
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.check_circle_outline,
+                      color: cs.primary,
+                    ),
+                    title: Text(
+                      item.descripcion,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      '${item.categoria.label} · ${item.componenteAplica.label}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                    trailing: Chip(
+                      label: const Text('Del plan'),
+                      backgroundColor: cs.tertiary.withValues(alpha: 0.12),
+                      labelStyle: TextStyle(color: cs.tertiary, fontSize: 11),
+                      side: BorderSide.none,
+                    ),
+                  ),
+                );
+              }
+
+              // Ítem adicional propuesto por el taller
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: cfg.incorporar
+                        ? cs.primary.withValues(alpha: 0.5)
+                        : cs.outlineVariant,
                   ),
                 ),
-                trailing: item.itemId != null
-                    ? Chip(
-                        label: const Text('Del plan'),
-                        backgroundColor: cs.tertiary.withValues(alpha: 0.12),
-                        labelStyle: TextStyle(color: cs.tertiary, fontSize: 11),
-                        side: BorderSide.none,
-                      )
-                    : Chip(
-                        label: const Text('Adicional'),
-                        backgroundColor: cs.surfaceContainerHighest,
-                        labelStyle: const TextStyle(fontSize: 11),
-                        side: BorderSide.none,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.add_circle_outline,
+                            color: cs.primary,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.descripcion,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${item.categoria.label} · ${item.componenteAplica.label}',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Chip(
+                            label: const Text('Adicional'),
+                            backgroundColor: cs.surfaceContainerHighest,
+                            labelStyle: const TextStyle(fontSize: 11),
+                            side: BorderSide.none,
+                          ),
+                        ],
                       ),
-              ),
-            ),
+                      const SizedBox(height: 8),
+                      const Divider(height: 1),
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          '¿Incorporar a mantenimientos periódicos?',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Se añadirá al plan preventivo permanente para recordar sus próximos servicios.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                        value: cfg.incorporar,
+                        onChanged: (val) {
+                          setState(() => cfg.incorporar = val);
+                        },
+                      ),
+                      if (cfg.incorporar) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: TextField(
+                                controller: cfg.kmController,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                decoration: const InputDecoration(
+                                  labelText: 'Cada cuántos km',
+                                  suffixText: 'km',
+                                  isDense: true,
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: TextField(
+                                controller: cfg.mesesController,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                decoration: const InputDecoration(
+                                  labelText: 'Meses',
+                                  suffixText: 'meses',
+                                  isDense: true,
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            for (final km in [10000, 20000, 30000, 40000, 50000])
+                              ActionChip(
+                                label: Text('${formatearNumero(km)} km'),
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () {
+                                  setState(() {
+                                    cfg.kmController.text = km.toString();
+                                  });
+                                },
+                              ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
 
           if (propuesta.notas != null && propuesta.notas!.isNotEmpty) ...[
             const SizedBox(height: 16),
